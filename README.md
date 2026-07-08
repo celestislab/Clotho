@@ -42,7 +42,7 @@ This project is our submission to **[AMD Developer Hackathon: ACT II](https://la
 | **Gemma 4 12B** (open weights, Google) | Base model fine-tuned for Minecraft planning |
 | **PLAICraft** (UBC/PLAI) | Time-aligned human Minecraft behavior dataset |
 
-> 🤗 **Model on Hugging Face:** `celestis-lab/oneiro-gemma-4-12b` *(link will go here once published)*
+> 🤗 **Model on Hugging Face:** [`Celestis-ai/oneiro-mc`](https://huggingface.co/Celestis-ai/oneiro-mc) *(link will go live once published)*
 
 The hackathon prototype lives in [`../Oneiro/`](../Oneiro/) and demonstrates the full observe → plan → act loop end-to-end with a Mineflayer body. Clotho itself is the longer-term framework architecture that the prototype grows into.
 

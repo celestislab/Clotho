@@ -1,115 +1,115 @@
-# ADR-001: Dual-Model Architecture — Почему два агента?
+# ADR-001: Dual-Model Architecture — Why Two Agents?
 
-> **Статус**: Принято
-> **Дата**: 2026-03-30 (переписан с 2026-03-06)
-
----
-
-## Контекст
-
-Oneiro — автономный VLA-агент в Minecraft. Главное требование: **< 100ms латентность** на рефлексы (бой, выживание) при сохранении способности планировать, общаться и строить.
-
-## Главный вопрос
-
-**Один LLM или два разных?**
+> **Status**: Accepted
+> **Date**: 2026-03-30 (rewritten from 2026-03-06)
 
 ---
 
-## Вариант A: Один LLM для всего
+## Context
 
-Используем одну модель (Qwen3.5-35B-A3B или Gemini Flash Lite) для рефлексов, планирования и чата.
+Oneiro is an autonomous VLA-agent in Minecraft. The main requirement: **< 100ms latency** for reflexes (combat, survival) while maintaining the ability to plan, communicate, and build.
 
-| За | Против |
+## The Key Question
+
+**One LLM or two different ones?**
+
+---
+
+## Option A: One LLM for Everything
+
+Use a single model (Qwen3.5-35B-A3B or Gemini Flash Lite) for reflexes, planning, and chat.
+
+| Pros | Cons |
 |---|---|
-| Простая архитектура | Невозможно одновременно быть быстрым И глубоким |
-| Один деплой | Если LLM "думает" 3 сек — бот мёртв от крипера |
-| Меньше кода | API-модель непредсказуема по латентности |
+| Simple architecture | Impossible to be both fast AND deep simultaneously |
+| Single deployment | If the LLM "thinks" for 3 sec — the bot is dead from a creeper |
+| Less code | API models have unpredictable latency |
 
-**Проблема:** Qwen с `enable_thinking: true` генерирует 100+ токенов мыслей → 500ms+. Gemini через API → 1-3 сек. **Ни одна модель не может быть одновременно быстрой и умной.**
+**Problem:** Qwen with `enable_thinking: true` generates 100+ thinking tokens → 500ms+. Gemini via API → 1-3 sec. **No single model can be both fast and smart.**
 
 ---
 
-## Вариант B: Два агента (Принято ✅)
+## Option B: Two Agents (Accepted ✅)
 
-**Reflex (Qwen3.5-35B-A3B)** — локальный, `enable_thinking: false`, макро-токены.
-**Mind (Gemini 3.1 Flash Lite)** — API через OpenClaw, асинхронный.
-**Deep Think (Gemini 3 Deep Think)** — для сверхтяжёлых задач.
+**Reflex (Qwen3.5-35B-A3B)** — local, `enable_thinking: false`, macro-tokens.
+**Mind (Gemini 3.1 Flash Lite)** — API via OpenClaw, asynchronous.
+**Deep Think (Gemini 3 Deep Think)** — for super-heavy tasks.
 
-| За | Против |
+| Pros | Cons |
 |---|---|
-| Рефлексы < 100ms (один токен!) | Сложнее архитектура |
-| Планирование без ограничений | Нужен оркестратор (Node.js) |
-| Каждая модель оптимальна для своей задачи | Два деплоя (local + API) |
-| OpenClaw даёт memory, web search, tools | Зависимость от API для планирования |
-| Subsumption (инстинкт > приказ) | Протокол координации |
+| Reflexes < 100ms (single token!) | More complex architecture |
+| Planning without limits | Needs an orchestrator (Node.js) |
+| Each model is optimal for its task | Two deployments (local + API) |
+| OpenClaw provides memory, web search, tools | API dependency for planning |
+| Subsumption (instinct > command) | Coordination protocol |
 
 ---
 
-## Ключевые решения
+## Key Decisions
 
-### Почему Qwen3.5-35B-A3B для рефлексов?
+### Why Qwen3.5-35B-A3B for Reflexes?
 
-| Критерий | Qwen3.5-35B-A3B | Qwen3.5-9B (Dense) | Gemini Flash Lite |
+| Criterion | Qwen3.5-35B-A3B | Qwen3.5-9B (Dense) | Gemini Flash Lite |
 |---|---|---|---|
-| Активных параметров | **3B** | 9B | N/A (облако) |
-| Латентность (5 токенов) | ~50ms | ~150ms | ~1-3 сек |
-| Мультимодальность | ✅ Нативная | ✅ | ✅ |
+| Active parameters | **3B** | 9B | N/A (cloud) |
+| Latency (5 tokens) | ~50ms | ~150ms | ~1-3 sec |
+| Multimodality | ✅ Native | ✅ | ✅ |
 | `enable_thinking: false` | ✅ | ✅ | N/A |
-| Локальный деплой | ✅ (TPU v6e) | ✅ | ❌ |
-| Контроль словаря | ✅ Макро-токены | ✅ | ❌ |
+| Local deployment | ✅ (TPU v6e) | ✅ | ❌ |
+| Vocabulary control | ✅ Macro-tokens | ✅ | ❌ |
 
-**Вердикт:** MoE 35B (3B active) быстрее чем Dense 9B, при этом имеет доступ к 35B параметрам знаний. Макро-токены невозможны через API.
+**Verdict:** MoE 35B (3B active) is faster than Dense 9B, while having access to 35B parameters of knowledge. Macro-tokens are impossible via API.
 
-### Почему Gemini для планирования, а не ещё один Qwen?
+### Why Gemini for Planning, Not Another Qwen?
 
-- **OpenClaw** даёт готовую инфраструктуру: память, web search, function calling, мультимодальность
-- Планировщику **не нужна** скорость — 3-10 сек это нормально для стратегии
-- Gemini Flash Lite стоит $0.25/1M input — копейки
-- **Gemini 3 Deep Think** доступен для сверхтяжёлых задач (test-time compute)
+- **OpenClaw** provides ready infrastructure: memory, web search, function calling, multimodality
+- The planner **doesn't need** speed — 3-10 sec is fine for strategy
+- Gemini Flash Lite costs $0.25/1M input — pennies
+- **Gemini 3 Deep Think** is available for super-heavy tasks (test-time compute)
 
-### Почему не OpenClaw для рефлексов?
+### Why Not OpenClaw for Reflexes?
 
-OpenClaw работает через API (шлюз → агент → LLM → ответ). Каждый hop добавляет латентность. Для < 100ms нужен **прямой** вызов модели на том же сервере, без сетевых задержек.
+OpenClaw works through API (gateway → agent → LLM → response). Each hop adds latency. For < 100ms you need a **direct** model call on the same server, without network delays.
 
 ---
 
-## Протокол: Master-Worker
+## Protocol: Master-Worker
 
 ```
-Gemini (Прораб)  ──JSON-директива──►  Node.js (Рация)  ──промпт──►  Qwen (Рабочий)
-                                           │
-                                    Эфемерная доска
-                                    (HP, цель, инвентарь)
+Gemini (Foreman)  ──JSON directive──►  Node.js (Walkie)  ──prompt──►  Qwen (Worker)
+                                            │
+                                     Ephemeral Board
+                                     (HP, goal, inventory)
 ```
 
-- **Gemini** не знает о макро-токенах. Он выдаёт абстрактные JSON-директивы.
-- **Node.js** переводит директиву в текстовый промпт для Qwen.
-- **Qwen** не знает о Gemini. Он видит кадр + текст → выдаёт макро-токен.
-- **Subsumption**: если на кадре угроза — рефлекс перебивает директиву.
+- **Gemini** doesn't know about macro-tokens. It outputs abstract JSON directives.
+- **Node.js** translates the directive into a text prompt for Qwen.
+- **Qwen** doesn't know about Gemini. It sees a frame + text → outputs a macro-token.
+- **Subsumption**: if there's a threat in the frame — the reflex overrides the directive.
 
 ---
 
-## Историческая справка
+## Historical Note
 
-Первоначально (v1.0, март 2026) архитектура предполагала:
-- Один Gemini Flash Lite для всего
-- Рефлексы = локальный JavaScript скрипт (if/else, без LLM)
-- OpenClaw как основной фреймворк
+Originally (v1.0, March 2026) the architecture assumed:
+- One Gemini Flash Lite for everything
+- Reflexes = local JavaScript script (if/else, no LLM)
+- OpenClaw as the main framework
 
-Это было заменено на dual-agent после осознания:
-1. JavaScript рефлексы не умеют "видеть" — только реагируют на числа API
-2. Один LLM не может быть быстрым и умным одновременно
-3. Fine-tuned Qwen с макро-токенами = настоящее Vision-Language-Action
+This was replaced with dual-agent after realizing:
+1. JavaScript reflexes can't "see" — they only react to API numbers
+2. A single LLM can't be both fast and smart simultaneously
+3. Fine-tuned Qwen with macro-tokens = true Vision-Language-Action
 
 ---
 
-## Связанные документы
+## Related Documents
 
-| Документ | Описание |
+| Document | Description |
 |---|---|
-| [architecture.md](architecture.md) | Полная техническая архитектура |
+| [architecture.md](architecture.md) | Full technical architecture |
 | [README.md](../README.md) | Master Summary & Blueprint |
 
 <p align="center">
-  <sub>📅 Обновлено: 2026-03-30</sub>
+  <sub>📅 Updated: 2026-03-30</sub>
 </p>
