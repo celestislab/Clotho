@@ -1,13 +1,13 @@
 # 🌙 Architecture Oneiro — Dual-Agent VLA
 
 > **Vision-Language-Action** — two agents, one orchestrator, zero mods
-> Updated: 2026-03-30
+> Updated: 2026-07-08
 
 ---
 
 ## Overview
 
-Oneiro — embodied VLA-agent consisting of **two neural agents** and **one orchestrator script**. Unlike single-threaded LLM bots (Mindcraft, Voyager), Oneiro separates **fast reflexes** and **slow planning** into different models, inspired by the biological nervous system.
+Oneiro — embodied VLA-agent consisting of **two neural agents** and **one orchestrator script**. Unlike single-threaded LLM bots (Mindcraft, Voyager), Oneiro separates **fast reflexes** and **slow planning** into different models, inspired by the biological nervous system. A future third agent (Social) for voice and emotion is planned post-MVP.
 
 ### Positioning among VLA-agents
 
@@ -21,7 +21,7 @@ Oneiro — embodied VLA-agent consisting of **two neural agents** and **one orch
 | **OpenHA** (2025) | Chain of Action | Hierarchical | Closer to us, but monolithic VLA |
 | **Oneiro** (2026) | **Dual-Agent + Subsumption** | **UMAS macro-tokens** | Our approach ↓ |
 
-**Key difference of Oneiro:** Separation into Reflex (Qwen, <100ms) and Mind (Gemini, 3-10s) allows **simultaneously** having fast instincts AND deep planning. JARVIS cannot flee from a creeper in 100ms because its single model is busy generating chain-of-thought.
+**Key difference of Oneiro:** Separation into Reflex (Gemma 4 12B, <100ms) and Planner (Gemini, 30-60s) allows **simultaneously** having fast instincts AND deep planning. JARVIS cannot flee from a creeper in 100ms because its single model is busy generating chain-of-thought.
 
 ---
 
@@ -31,23 +31,24 @@ Oneiro — embodied VLA-agent consisting of **two neural agents** and **one orch
 
 | Parameter | Value |
 |---|---|
-| **Model** | Qwen3.5-35B-A3B (Sparse MoE) |
-| **Active parameters** | ~3B out of 35B |
-| **Mode** | `enable_thinking: false` |
+| **Model** | Gemma 4 12B — fine-tuned as `oneiro-mc` ([Celestis-ai/oneiro-mc](https://huggingface.co/Celestis-ai/oneiro-mc) on HuggingFace) |
+| **Training** | Fine-tuned on PLAICraft data for UMAS action tokens |
+| **Output mode** | Single-token classification |
 | **Latency** | < 100ms (with KV-Cache: ~30-50ms) |
 | **Input** | Frame + full context (task, inventory, threats, directive) |
 | **Output** | One UMAS macro-token |
-| **Runs on** | Google Cloud TPU v7 Ironwood (1 chip, 192 GB HBM) |
-| **Inference mode** | `max_new_tokens=1` + **Static Logit Bias** (tensor-mask) |
+| **Served via** | vLLM (ROCm) or llama.cpp (GGUF) |
+| **Inference mode** | `max_new_tokens=1` + **Static Logit Bias** (logit-bias mask) |
+| **Hackathon MVP fallback** | Rule-based SafetyGuard (TypeScript) |
 
 **Role:** Not a dumb stub, but a **conscious reflex**. The model sees the full context: what it's doing, what the global task is, where it's going, what's in the inventory. But it **decides instantly** — one token in one forward pass.
 
 > ⚠️ **Logit Bias:** At inference the model can choose ONLY from ~150 UMAS-tokens
-> via **Static Logit Bias** (tensor-mask: UMAS = 0, rest = -inf). This eliminates hallucinations with no overhead.
+> via **Static Logit Bias** (logit-bias mask: UMAS = 0, rest = -inf). This eliminates hallucinations with no overhead.
 >
-> ⚠️ `prefix_allowed_tokens_fn` is not possible on TPU — dynamic Python functions
-> break XLA graphs (Host-Device Sync → 500ms+). Static Logit Bias is embedded
-> into `lm_head` during graph compilation. Overhead: **0ms**.
+> ⚠️ vLLM supports `logit_bias` / `allowed_token_ids` natively; llama.cpp supports
+> grammar-constrained generation. Both approaches restrict output to UMAS tokens
+> with negligible overhead (<1ms).
 
 ---
 
@@ -59,18 +60,18 @@ Oneiro — embodied VLA-agent consisting of **two neural agents** and **one orch
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│           ONEIRO CONTEXT (KV-Cache on TPU)               │
+│           ONEIRO CONTEXT (KV-Cache)                      │
 │                                                           │
-│ 🔒 STATIC (updated every 10-30 sec by Mind)              │
+│ 🔒 STATIC (updated every 30-60 sec by Planner)           │
 │    ├─ System prompt ("You are Oneiro reflex...")         │
 │    ├─ Global task ("Building base at X:105")             │
-│    ├─ Personality / lore from RAG                        │
+│    ├─ Personality / lore from Hermes memory              │
 │    └─ Prefill: CACHED, ~0ms                              │
 │                                                           │
 │ 🔄 SEMI-STATIC (updated every 1-2 sec)                   │
 │    ├─ Inventory (what's in slots, durability)            │
 │    ├─ Nearby entities (mobs, players, drops)             │
-│    ├─ Directive from Mind (MINE_IRON / BUILD / EXPLORE)  │
+│    ├─ Directive from Planner (MINE_IRON / BUILD / EXPLORE)│
 │    ├─ Task progress ("Mined 24/64 cobblestone")          │
 │    └─ Prefill: partial recompute, ~10-15ms               │
 │                                                           │
@@ -86,14 +87,14 @@ Oneiro — embodied VLA-agent consisting of **two neural agents** and **one orch
 └──────────────────────────────────────────────────────────┘
 ```
 
-**The Qwen prompt (every frame) looks rich:**
+**The oneiro-mc prompt (every frame) looks rich:**
 
 ```
 [SYSTEM] <|TASK_REFLEX|> You are Oneiro. Output exactly 1 macro-token.
 Survival overrides directives.
 
 [GLOBAL TASK] Building a bridge to the village. Stage: mining cobblestone.
-[MIND DIRECTIVE] MINE_COBBLESTONE (target: X:98 Y:62 Z:-15)
+[PLANNER DIRECTIVE] MINE_COBBLESTONE (target: X:98 Y:62 Z:-15)
 [PROGRESS] Mined 24/64 cobblestone.
 
 [INVENTORY] Slot0:Iron_Pickaxe(dur:187) Slot1:Cobblestone×24
@@ -118,7 +119,7 @@ Survival overrides directives.
 → Answer: `<|SURV_FLEE_180|>` (creeper approaching → instinct)
 
 > ⚠️ **Temporal Context** solves the problem of "temporal blindness":
-> From a single frame Qwen won't understand — is the creeper approaching or fleeing,
+> From a single frame the reflex model won't understand — is the creeper approaching or fleeing,
 > is the bot falling or jumping. Textual cues of velocity and action history
 > give the model inertia without additional frames.
 
@@ -131,7 +132,7 @@ Not everything needs 10 FPS. The Orchestrator dynamically switches the mode:
 | 🔴 Combat | 10 FPS | 100ms | Hostile mob ≤ 8 blocks | Minimum: frame + HP + threats |
 | 🟡 Active | 5 FPS | 200ms | Active work (mining, building) | + inventory + task |
 | 🟢 Safe | 2 FPS | 500ms | No threats, peaceful zone | + history + full state |
-| 😴 Idle | 0.5 FPS | 2000ms | AFK / observation | Everything + reflection from Mind |
+| 😴 Idle | 0.5 FPS | 2000ms | AFK / observation | Everything + reflection from Planner |
 
 ```
 Orchestrator sees a hostile mob → switches to 10 FPS (Combat)
@@ -140,18 +141,20 @@ Mob killed → 3 sec buffer → back to Active / Safe
 
 ---
 
-### 🧠 Agent 2: Oneiro Mind (Prefrontal Cortex)
+### 🧠 Agent 2: Oneiro Planner (Prefrontal Cortex)
 
 | Parameter | Value |
 |---|---|
-| **Model** | Gemini 3.1 Flash Lite (API) |
-| **Orchestration** | Via OpenClaw |
-| **Latency** | 3-10 seconds (asynchronous) |
+| **Model** | Gemini 3.5 Flash (API) |
+| **Runtime** | Hermes Agent |
+| **Latency** | 30-60 seconds (asynchronous) |
 | **Input** | Screenshot + game state + memory + chat |
-| **Output** | JSON-directive for Qwen / text for chat |
-| **Capabilities** | Multimodality, memory, web search, function calling |
+| **Output** | JSON-directive for oneiro-mc / text for chat |
+| **Memory** | SQLite + FTS5 (via Hermes) |
+| **Capabilities** | Multimodality, skills, provider routing, tool dispatch, function calling |
+| **Body connection** | MCP bridge |
 
-**Role:** Mind, personality, builder. Has long-term memory (RAG via OpenClaw), communicates with players in chat in a philosophical style. Gives orders to Qwen via JSON-directives.
+**Role:** Planner, personality, builder. Has long-term memory (SQLite+FTS5 via Hermes Agent), communicates with players in chat in a philosophical style. Gives orders to oneiro-mc via JSON-directives through the MCP bridge.
 
 ```json
 {
@@ -161,17 +164,19 @@ Mob killed → 3 sec buffer → back to Active / Safe
 }
 ```
 
-**Critical:** While Mind "thinks" (3-10 sec), Reflex works autonomously on reflexes. The agent never "freezes" waiting for strategy.
+**Critical:** While Planner "thinks" (30-60 sec), Reflex works autonomously on reflexes. The agent never "freezes" waiting for strategy.
 
 ---
 
-### 🧊 Agent 3: Deep Think (Emergency)
+### 🎙️ Agent 3: Social (Future)
 
 | Parameter | Value |
 |---|---|
-| **Model** | Gemini 3 Deep Think |
-| **Latency** | 30-120 seconds |
-| **When** | Complex navigation, non-standard situations, meta-analysis |
+| **Model** | Gemini 3.5 Flash Live / GPT Realtime 2.1 mini (future) |
+| **Scope** | Voice + emotion, decoupled from movement |
+| **Status** | Out of scope for hackathon MVP |
+
+**Role:** Real-time voice interaction and emotional expression. Decoupled from movement and reflexes — the Social agent handles conversation and personality expression while Reflex and Planner handle body control and strategy. This agent is planned for post-MVP development.
 
 ---
 
@@ -182,7 +187,7 @@ A regular Mineflayer bot. **Has no intelligence.** Controlled by a strict FSM:
 ### FSM States
 
 ```
-┌──────────┐  Mind directive  ┌─────────────────────┐
+┌──────────┐ Planner directive ┌─────────────────────┐
 │   IDLE   │ ───────────────→ │ EXECUTING_DIRECTIVE │
 │  0.5 FPS │ ←─────────────── │     2-5 FPS         │
 └──────────┘  TASK_COMPLETE   └─────────┬───────────┘
@@ -199,17 +204,17 @@ A regular Mineflayer bot. **Has no intelligence.** Controlled by a strict FSM:
 
 | State | FPS | Description | Entry trigger |
 |---|---|---|---|
-| **IDLE** | 0.5 | Waits for plan from Mind, Qwen on standby | No directive / SYS_TASK_COMPLETE |
-| **EXECUTING_DIRECTIVE** | 2-5 | Pathfinder guides the bot, Qwen outputs SYS_YIELD | Mind directive received |
-| **SUBSUMPTION_OVERRIDE** | 10 | `bot.pathfinder.stop()`, Qwen controls | SURV_ token from Qwen |
+| **IDLE** | 0.5 | Waits for plan from Planner, oneiro-mc on standby | No directive / SYS_TASK_COMPLETE |
+| **EXECUTING_DIRECTIVE** | 2-5 | Pathfinder guides the bot, oneiro-mc outputs SYS_YIELD | Planner directive received |
+| **SUBSUMPTION_OVERRIDE** | 10 | `bot.pathfinder.stop()`, oneiro-mc controls | SURV_ token from oneiro-mc |
 | **RECOVERY** | 2 | Exit from being stuck | Watchdog timeout / 3× SYS_STUCK |
 
 ### Ephemeral Board (In-memory Singleton)
 
 ```typescript
 interface EphemeralBoard {
-  // Written by Mind Agent (via API)
-  mind_directive: {
+  // Written by Planner Agent (via Hermes)
+  planner_directive: {
     id: string;
     intent: 'MINE_TASK' | 'BUILD_TASK' | 'CRAFT_TASK' | 'FOLLOW_PLAYER' | 'EXPLORE' | 'IDLE' | 'GOTO';
     target?: string;
@@ -237,7 +242,7 @@ interface EphemeralBoard {
 ### Error Recovery (Watchdog)
 
 ```typescript
-// In the Qwen response processing loop:
+// In the reflex response processing loop:
 if (umas_token === 'SYS_STUCK') {
   board.stuck_counter++;
 }
@@ -249,24 +254,24 @@ if (board.stuck_counter >= 3 || positionUnchanged(2000)) {
     bot.clearControlStates();
     board.stuck_counter = 0;
   }, 1500);
-  // If it didn't help → IDLE + Gemini webhook
+  // If it didn't help → IDLE + Planner webhook
   if (board.stuck_counter >= 6) {
     board.fsm_state = 'IDLE';
-    await callMind({ event: 'CRITICAL_STUCK', pos: board.agent_state.pos });
+    await callPlanner({ event: 'CRITICAL_STUCK', pos: board.agent_state.pos });
   }
 }
 ```
 
-### Feedback Loop (Orchestrator → Mind)
+### Feedback Loop (Orchestrator → Planner)
 
 ```typescript
 // Subscription to task completion events
 bot.inventory.on('updateSlot', () => {
-  if (checkDirectiveComplete(board.mind_directive)) {
+  if (checkDirectiveComplete(board.planner_directive)) {
     board.fsm_state = 'IDLE';
-    await callMind({
+    await callPlanner({
       event: 'TASK_COMPLETE',
-      result: `${board.mind_directive.target} gathered`,
+      result: `${board.planner_directive.target} gathered`,
       inventory_snapshot: getInventory()
     });
   }
@@ -281,19 +286,19 @@ bot.inventory.on('updateSlot', () => {
 5. **Tiered Refresh** — switches FPS based on FSM state
 6. **KV-Cache Manager** — invalidates semi-static data on changes
 7. **Watchdog** — detects looping and SYS_STUCK
-8. **Feedback** — notifies Mind about task completion and critical events
+8. **Feedback** — notifies Planner about task completion and critical events
 
 ---
 
 ## UMAS — Universal Mineflayer Action Space
 
-### Design principles (per Deep Think recommendation)
+### Design principles
 
 1. **Single-Token Classification** — exactly 1 forward pass, `max_new_tokens=1`
 2. **Parameterized tokens are FORBIDDEN** — `<|ACT_PLACE|>` + `<|OAK_PLANKS|>` = 2 passes = 150ms+
 3. **Contextual actions** — `ACT_MINE_TARGET` = "mine what you're looking at" (Orchestrator computes the block)
 4. **Semantic inventory** — `INV_EQUIP_MELEE_BEST` instead of specific items
-5. **~120-150 fixed tokens** in Qwen's extended vocabulary
+5. **~120-150 fixed tokens** in the model's extended vocabulary
 
 ### Full taxonomy (~120 tokens, 6 categories)
 
@@ -390,7 +395,7 @@ bot.inventory.on('updateSlot', () => {
 
 > `<|SYS_YIELD_TO_MIND|>` — **the most frequent token** (~60-70% of output).
 > Means: "no threats, visual check passed, Orchestrator continues
-> executing the text directive of the Mind-agent (crafting, navigation, etc.)"
+> executing the text directive of the Planner-agent (crafting, navigation, etc.)"
 
 ---
 
@@ -401,10 +406,10 @@ Basic survival instincts **override** the text directive:
 ```
 Priority:
   [1] SURV_ tokens    — instinct (creeper, lava, fall)
-  [2] NAV_ / ACT_     — executing Mind directive
+  [2] NAV_ / ACT_     — executing Planner directive
   [3] SYS_YIELD       — "all good, continue plan"
 
-Qwen is running to place a block (Mind directive)
+oneiro-mc is running to place a block (Planner directive)
   → A Creeper@3m appears on the frame
   → Reflex: <|SURV_FLEE_180|> (instinct > order)
   → Creeper killed/exploded
@@ -414,11 +419,17 @@ Qwen is running to place a block (Mind directive)
 
 ---
 
-## Fine-tuning Pipeline (Deep Think Blueprint)
+## Fine-tuning Pipeline (Reflex Blueprint)
 
-### Minecraft knowledge — Synthetic Instruction Tuning
+The `oneiro-mc` model (Gemma 4 12B) is fine-tuned **specifically for reflexes** — producing UMAS action tokens in a single forward pass. It is **not** trained for planning, reasoning, or multi-turn dialogue. Planning is handled by the cloud-based Planner agent (Gemini 3.5 Flash via Hermes).
 
-~950-1100 recipes are embedded into weights via 4 types of Q&A:
+### PLAICraft data — UMAS action-token training
+
+The primary training corpus comes from **PLAICraft** gameplay data, annotated with UMAS macro-tokens. Each example maps a game state (frame + context) to exactly one UMAS action token, teaching the model fast reflexive responses.
+
+### Minecraft knowledge — Supplementary semantic context
+
+~950-1100 recipes are embedded into weights via 4 types of Q&A to give the model semantic understanding of Minecraft items and mechanics (improves reflex quality, not planning):
 
 | Type | Example | Goal |
 |---|---|---|
@@ -445,9 +456,8 @@ Qwen is running to place a block (Mind directive)
 | **Rank** | 64–128 | Balance of capacity and speed |
 | **Alpha** | 128–256 | 2× Rank (standard) |
 | **Target modules** | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj | All attention + FFN |
-| **🚨 FROZEN** | router, shared_expert_gate | Touching = routing collapse |
-| **🚨 UNFROZEN** | embed_tokens, lm_head | New UMAS-tokens must be trained with full fine-tune |
-| **Precision** | bfloat16 | QLoRA is dangerous for MoE |
+| **🚨 UNFROZEN** | embed_tokens, lm_head | New UMAS-tokens must be trained |
+| **Precision** | bfloat16 | Standard for 12B models |
 | **Optimizer** | AdamW | Standard |
 
 ### Example format (Reflex)
@@ -496,16 +506,16 @@ Qwen is running to place a block (Mind directive)
 
 ```mermaid
 graph TB
-    subgraph "🧠 Mind (Gemini)"
-        OpenClaw[OpenClaw Runtime]
-        Gemini[Gemini 3.1 Flash Lite]
-        DeepThink[Gemini 3 Deep Think]
-        Memory[(RAG Memory)]
-        WebSearch[Web Search]
+    subgraph "🧠 Planner (Gemini)"
+        Hermes[Hermes Agent Runtime]
+        Gemini[Gemini 3.5 Flash]
+        Memory[(SQLite + FTS5 Memory)]
+        Skills[Skills + Tool Dispatch]
+        MCPBridge[MCP Bridge]
     end
 
-    subgraph "🦴 Reflex (Qwen)"
-        QwenModel[Qwen3.5-35B-A3B<br/>3B active · KV-Cache]
+    subgraph "🦴 Reflex (oneiro-mc)"
+        ReflexModel[Gemma 4 12B · oneiro-mc<br/>KV-Cache · vLLM/llama.cpp]
         KVCache[KV-Cache<br/>Static + Semi-static]
         UMAS[~150 UMAS-tokens<br/>NAV/CAM/ACT/INV/SURV/SYS]
     end
@@ -522,16 +532,16 @@ graph TB
         Paper[Paper 1.21.11<br/>10.0.0.3:25565]
     end
 
-    OpenClaw --> Gemini
-    OpenClaw --> DeepThink
-    OpenClaw --> Memory
-    OpenClaw --> WebSearch
-    Gemini -->|JSON-directive| EphBoard
+    Hermes --> Gemini
+    Hermes --> Memory
+    Hermes --> Skills
+    Gemini -->|JSON-directive| MCPBridge
+    MCPBridge -->|directive| EphBoard
 
-    IPC -->|Frame| QwenModel
+    IPC -->|Frame| ReflexModel
     EphBoard -->|Context| KVCache
-    KVCache --> QwenModel
-    QwenModel --> UMAS
+    KVCache --> ReflexModel
+    ReflexModel --> UMAS
     UMAS -->|1 token| TokenMapper
     TokenMapper --> Bot
     TieredRefresh -->|FPS control| IPC
@@ -547,26 +557,26 @@ sequenceDiagram
     participant W as 🌍 Minecraft
     participant O as 📮 Orchestrator
     participant KV as 💾 KV-Cache
-    participant Q as 🦴 Qwen (Reflex)
-    participant G as 🧠 Gemini (Mind)
+    participant R as 🦴 oneiro-mc (Reflex)
+    participant G as 🧠 Gemini (Planner)
 
     Note over O: Tiered Refresh: 2-10 FPS
 
     loop Every frame (100-500ms adaptive)
         O->>O: Render via prismarine-viewer → /dev/shm
         O->>KV: Update dynamics (frame + HP + threats)
-        KV->>Q: Static/semi-static cache + fresh frame
+        KV->>R: Static/semi-static cache + fresh frame
         alt Threat (Subsumption)
-            Q->>O: <|SURV_FLEE_180|> (instinct > order)
+            R->>O: <|SURV_FLEE_180|> (instinct > order)
             O->>O: Switch FPS → Combat (10 FPS)
         else No threat
-            Q->>O: <|SYS_YIELD_TO_MIND|>
-            O->>O: Continue executing Mind directive
+            R->>O: <|SYS_YIELD_TO_MIND|>
+            O->>O: Continue executing Planner directive
         end
         O->>W: Mineflayer action
     end
 
-    loop Every 3-10 sec (async)
+    loop Every 30-60 sec (async)
         O->>G: Screenshot + game state + chat
         G-->>O: JSON-directive / chat reply
         O->>KV: Invalidate static (new task)
@@ -593,12 +603,12 @@ sequenceDiagram
 | Bot loops | Watchdog: if no actions for 30 sec → restart solution |
 | Bot griefs | Tool whitelist: no TNT, no lava casts |
 | Bot spams chat | Rate limit: 1 message / 5 sec |
-| Qwen hallucinates action | **Static Logit Bias** — tensor-mask (UMAS = 0, rest = -inf, 0ms overhead) |
-| Gemini delayed | Qwen autonomous on reflexes, doesn't wait for Mind |
+| Reflex model hallucinates action | **Static Logit Bias** — logit-bias mask (UMAS = 0, rest = -inf, <1ms overhead) |
+| Planner delayed | oneiro-mc autonomous on reflexes, doesn't wait for Planner |
 | Bot stuck | `<\|SYS_STUCK\|>` → pathfinder timeout → teleport |
 | IPC bottleneck | Zero-Copy via /dev/shm, no buffer copying |
-| 35B memory footprint | 1 TPU v7 chip (192 GB HBM) — fits with margin in bf16 (~70 GB) |
-| Catastrophic forgetting | 10% replay buffer + frozen router layers |
+| 12B memory footprint | vLLM (ROCm) or llama.cpp (GGUF) — fits comfortably in ~24 GB VRAM (bf16) |
+| Catastrophic forgetting | 10% replay buffer in training data |
 
 ---
 
@@ -613,5 +623,5 @@ sequenceDiagram
 | [dataset.md](../dataset.md) | Dataset specification (~3M frames) |
 
 <p align="center">
-  <sub>📅 Updated: 2026-03-30</sub>
+  <sub>📅 Updated: 2026-07-08</sub>
 </p>

@@ -1,6 +1,6 @@
 # 🌙 Clotho Framework
 
-> **Autonomous Embodied VLA Agent Framework** — a fork of the [Hermes Agent](https://github.com/NousResearch/hermes-agent) runtime with TypeScript extensions for embodied AI agents in 3D worlds. Provides the action/intent/observation contract, reflex safety engine, and a Minecraft body adapter that the [Oneiro](https://github.com/celestislab/Oneiro) product runs on.
+> **Autonomous Embodied VLA Agent Framework** — a fork of the [Hermes Agent](https://github.com/NousResearch/hermes-agent) runtime with TypeScript extensions for embodied AI agents in 3D worlds. Provides a fine-tuned reflex model, action/intent/observation contract, reflex safety engine, and a Minecraft body adapter that the [Oneiro](https://github.com/celestislab/Oneiro) product runs on.
 
 <p>
   <a href="https://lablab.ai/ai-hackathons/amd-developer-hackathon-act-ii"><img alt="AMD Developer Hackathon: ACT II" src="https://img.shields.io/badge/Hackathon-AMD%20Developer%20Act%20II-ED1C24?style=flat-square"></a>
@@ -40,13 +40,13 @@ This project is our submission to **[AMD Developer Hackathon: ACT II](https://la
 
 | Resource | Role |
 |----------|------|
-| **AMD Developer Cloud** | Training & heavy compute (AMD Instinct GPUs, ROCm) |
-| **Fireworks AI** | Low-latency model inference and serving |
-| **Gemma 4 12B** (open weights, Google) | Base model fine-tuned for Minecraft planning |
-| **PLAICraft** (UBC/PLAI) | Time-aligned human Minecraft behavior dataset |
+| **Gemma 4 12B** (open weights, Google) | Base model fine-tuned for **reflexes** (vision-based survival, combat) |
+| **Gemini 3.5 Flash** (Google API) | **Planner** — strategic reasoning via Hermes Agent runtime |
+| **PLAICraft** (UBC/PLAI) | Time-aligned human Minecraft behavior dataset for reflex training |
 | **Hermes Agent** (Nous Research) | Planning runtime — memory, tools, provider routing |
+| **AMD Developer Cloud** | Training & heavy compute (AMD Instinct GPUs, ROCm) |
 
-> 🤗 **Model on Hugging Face:** [`Celestis-ai/oneiro-mc`](https://huggingface.co/Celestis-ai/oneiro-mc) *(link will go live once published)*
+> 🤗 **Reflex model on Hugging Face:** [`Celestis-ai/oneiro-mc`](https://huggingface.co/Celestis-ai/oneiro-mc) *(link will go live once published)*
 
 ---
 
@@ -54,40 +54,52 @@ This project is our submission to **[AMD Developer Hackathon: ACT II](https://la
 
 Oneiro uses a **dual-agent architecture** to separate fast reflexes from slow planning:
 
-### 1. Reflex (Motor Cortex) — lives in Clotho
-- Rule-based safety engine + future SLM (Gemma 1B-3B)
-- **< 100ms** latency, runs every tick
-- Handles survival, combat avoidance, emergency stop
-- **Does NOT go through Hermes or MCP** — pure local TypeScript
+### 1. Reflex Agent (Motor Cortex) — Gemma 4 12B fine-tune (`oneiro-mc`)
+- Fine-tuned on PLAICraft behavior data for vision-based survival
+- Outputs UMAS action tokens (single-token classification, < 100ms target)
+- Handles combat, dodging, parkour, emergency survival
+- Served via vLLM (ROCm) or llama.cpp (GGUF fallback)
+- **Hackathon MVP**: rule-based `SafetyGuard` as fallback when model is unavailable
 
-### 2. Planner (Prefrontal Cortex) — lives in Hermes
-- Fine-tuned Gemma 4 12B (`oneiro-mc`) via Hermes Agent runtime
-- **30-60s** planning cycle, fully asynchronous
+### 2. Planner Agent (Prefrontal Cortex) — Gemini 3.5 Flash via Hermes
+- Cloud API model, runs asynchronously every 30-60s
 - Takes world observations, outputs high-level goals (JSON)
 - Hermes provides: memory (SQLite+FTS5), skills, provider routing, tool dispatch
+- **Does NOT control raw movements** — only sets strategic directives
 
-### 3. MCP Bridge — lives in Oneiro
+### 3. Social Agent (Voice & Emotion) — *Future*
+- Real-time voice processing and emotional synthesis
+- Candidates: Gemini 3.5 Flash Live, GPT Realtime 2.1 mini
+- Decoupled from movement logic *(Out of scope for hackathon MVP)*
+
+### MCP Bridge
 - Connects the Hermes planner to the Mineflayer body
 - Exposes safe tools: `get_state()`, `set_goal()`, `get_goal_status()`
 - **Never used for reflexes** — only for periodic planning cycles
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  REFLEX LOOP (Clotho, TypeScript, <100ms, every tick)   │
-│  SafetyGuard → HP<6→stop, food<2→eat, creeper→flee     │
-│  ⚡ No model, no Hermes, no MCP — pure local rules       │
-└────────────────────────┬────────────────────────────────┘
-                         │ goal override
-┌────────────────────────▼────────────────────────────────┐
-│  MCP BRIDGE (Oneiro, TS↔Python, every 30-60s)           │
-│  get_state() ──► Hermes ◄── set_goal()                  │
-└────────────────────────┬────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────┐
-│  HERMES PLANNER (Python, every 30-60s)                  │
-│  AIAgent loop + Gemma 4 12B + SQLite memory + Skills    │
-│  🧠 2-5s per planning cycle — fine for 30-60s window    │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  REFLEX LAYER (Clotho, TypeScript + Gemma 4 12B, <100ms)   │
+│  Fine-tuned oneiro-mc → UMAS action tokens                  │
+│  SafetyGuard fallback: HP<6→stop, food<2→eat, creeper→flee │
+│  ⚡ Vision-based, local inference, no network for survival  │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ goal override (subsumption)
+┌──────────────────────────▼──────────────────────────────────┐
+│  MCP BRIDGE (TS ↔ Python, every 30-60s)                     │
+│  get_state() ──► Hermes ◄── set_goal()                      │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────┐
+│  HERMES PLANNER (Python, Gemini 3.5 Flash, every 30-60s)   │
+│  AIAgent loop + SQLite memory + Skills + Provider routing   │
+│  🧠 Strategic reasoning — "build a shelter", "mine iron"    │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│  SOCIAL AGENT (Future: Gemini 3.5 Flash Live / GPT RT 2.1) │
+│  Voice + emotion, decoupled from movement                   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 > 📖 Deep dive: [`docs/architecture.md`](docs/architecture.md) — full architecture, UMAS taxonomy, FSM orchestrator, decision diagrams.
@@ -163,10 +175,10 @@ Oneiro's model is fine-tuned on **[PLAICraft](https://www.plaicraft.ai/)** — a
 
 The hackathon prototype is the foundation. Post-prize work grows it into the full Clotho vision:
 
-1. **Reflex SLM** — small Gemma 1B-3B fine-tuned for real-time survival at FPS (< 100ms)
+1. **Reflex model optimization** — optimize oneiro-mc (Gemma 4 12B) for real-time inference at FPS (< 100ms)
 2. **Clotho raw-input core** — C++ screen capture + keystroke injection, replacing Mineflayer as the body adapter
-3. **Subsumption** — survival instincts override planner directives when a creeper is 3 blocks away
-4. **Social voice agent** — real-time speech interaction via WebSockets, decoupled from movement
+3. **Subsumption** — survival instincts (reflex) override planner directives when a creeper is 3 blocks away
+4. **Social voice agent** — real-time speech via Gemini 3.5 Flash Live / GPT Realtime 2.1 mini, decoupled from movement
 5. **UMAS expansion** — from ~17 hackathon actions toward the full ~150 token taxonomy
 
 ---
