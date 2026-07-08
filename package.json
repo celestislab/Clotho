@@ -1,0 +1,23 @@
+{
+  "name": "@celestis/clotho",
+  "version": "0.1.0",
+  "description": "Clotho — Autonomous Embodied VLA Agent Framework. Cognitive engine for embodied AI agents in 3D worlds.",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schemas/*": "./src/schemas/*.ts",
+    "./reflex/*": "./src/reflex/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "@types/node": "^22.10.0"
+  }
+}
