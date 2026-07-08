@@ -1,0 +1,51 @@
+# Clotho ↔ Hermes — unified launch config
+# =============================================================================
+# Goal: run Clotho's TS надстройка (the body + reflex, exposed via the MCP body
+# bridge) as ONE unit with the Hermes planning runtime — no manual
+# `hermes mcp add`, no separate `npm run mcp` process to babysit.
+#
+# How it works: Hermes reads `mcp_servers` from ~/.hermes/config.yaml and spawns
+# each stdio server as a child process on startup. Register `clotho-body` here
+# and booting Hermes automatically brings up the Minecraft body + reflex, then
+# the Gemini planner drives it through the get_state / set_goal tools.
+#
+# Install (minimal change to the Hermes "master" config):
+#   1. Merge the `mcp_servers` block below into ~/.hermes/config.yaml
+#      (or run once:  hermes mcp add clotho-body --command npx \
+#         --args tsx --args /abs/path/to/Clotho/src/mcp/body-server.ts ...)
+#   2. Put the runtime values in ~/.hermes/.env (see the ${VARS} used below).
+#   3. Launch Hermes normally — the body bridge starts with it.
+#
+# Note: Hermes does NOT set `cwd` for stdio servers, and only forwards the `env`
+# listed here (plus safe defaults). So we pass an ABSOLUTE script path and the
+# MC_* vars explicitly rather than relying on the body-server's own .env loader.
+
+mcp_servers:
+  clotho-body:
+    command: npx
+    args:
+      - tsx
+      - ${CLOTHO_DIR}/src/mcp/body-server.ts
+    env:
+      # Minecraft connection — set the real values in ~/.hermes/.env
+      MC_HOST: ${MC_HOST}
+      MC_PORT: ${MC_PORT}
+      MC_USERNAME: ${MC_USERNAME}
+      MC_VERSION: ${MC_VERSION}
+      MC_AUTH: ${MC_AUTH}
+      # Reflex / safety tuning (optional)
+      MAX_STEPS: ${MAX_STEPS}
+      WATCHDOG_TIMEOUT_MS: ${WATCHDOG_TIMEOUT_MS}
+    # set_goal can block while a goal runs; give it room before timing out
+    timeout: 120
+    connect_timeout: 60
+
+# ~/.hermes/.env example (NOT committed — real values live here):
+#   CLOTHO_DIR=/opt/Celestis/Clotho
+#   MC_HOST=10.10.0.3
+#   MC_PORT=25565
+#   MC_USERNAME=Oneiro
+#   MC_VERSION=1.21.11
+#   MC_AUTH=offline
+#   MAX_STEPS=50
+#   WATCHDOG_TIMEOUT_MS=60000

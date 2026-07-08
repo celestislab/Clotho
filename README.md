@@ -1,6 +1,6 @@
 # 🌙 Clotho Framework
 
-> **Autonomous Embodied VLA Agent Framework** — a fork of the [Hermes Agent](https://github.com/NousResearch/hermes-agent) runtime with TypeScript extensions for embodied AI agents in 3D worlds. Provides a fine-tuned reflex model, action/intent/observation contract, reflex safety engine, and a Minecraft body adapter that the [Oneiro](https://github.com/celestislab/Oneiro) product runs on.
+> **The embodied-agent framework that agents run on** — the [Hermes Agent](https://github.com/NousResearch/hermes-agent) planning runtime plus a TypeScript надстройка (extension layer) that gives an AI mind a body in a 3D world: the UMAS action/intent/observation contract, a game-decoupled reflex/safety engine, a Minecraft body adapter, and the orchestrator. Our fine-tuned model [Oneiro](https://github.com/celestislab/Oneiro) plugs into Clotho as the reflex brain.
 
 <p>
   <a href="https://lablab.ai/ai-hackathons/amd-developer-hackathon-act-ii"><img alt="AMD Developer Hackathon: ACT II" src="https://img.shields.io/badge/Hackathon-AMD%20Developer%20Act%20II-ED1C24?style=flat-square"></a>
@@ -14,12 +14,16 @@
 
 ## What is Clotho?
 
-Clotho is the **framework layer** of the Oneiro embodied agent stack. It defines the contract between an AI mind and a virtual body:
+Clotho is the **framework agents run on** — the runtime that turns a set of models into an embodied agent. It is the Hermes Agent planning runtime plus a TypeScript надстройка (extension layer) that supplies everything a mind needs to inhabit a body:
 
 - **UMAS Schemas** (Zod) — the action/intent/observation vocabulary that any agent must speak
 - **Reflex Engine** — `SafetyGuard`, a game-decoupled survival system that enforces stop conditions (low health, step limits, watchdog timeouts) regardless of what the planner decides
+- **Body adapter** — a Minecraft (Mineflayer) implementation of the framework's body interface: state extraction, action execution, connection lifecycle
+- **Hermes runtime** — vendored planning layer (memory, tools, provider routing) that hosts the planner agent
 
-Clotho is intentionally **game-agnostic**. It has no `mineflayer` dependency — the `SafetyGuard` operates through an `EmergencyStoppable` interface that any body adapter can implement.
+The models are **guests** on this framework: our fine-tuned **Oneiro** model runs on Clotho as the fast reflex brain, and **Gemini 3.5 Flash** runs on it (via Hermes) as the slow planner.
+
+The schema and reflex layers are intentionally **game-agnostic** — no `mineflayer` import. The `SafetyGuard` operates through an `EmergencyStoppable` interface, and only the body adapter is Minecraft-specific, so swapping the game (or moving to a raw screen/input body) means replacing one layer.
 
 ```
     ┌──────────┐     ┌──────────┐     ┌──────────┐
@@ -30,7 +34,7 @@ Clotho is intentionally **game-agnostic**. It has no `mineflayer` dependency —
          └───────────── verify ◀─────────────┘
 ```
 
-> **Clotho** = framework (schemas + reflex). **Oneiro** = product (Mineflayer body + Hermes planner). **Hermes** = the planning runtime by [Nous Research](https://github.com/NousResearch/hermes-agent).
+> **Clotho** = the framework agents run on (Hermes runtime + TS надстройка: schemas, reflex, body, orchestrator). **Oneiro** = our fine-tuned model that runs on Clotho as the reflex brain. **Hermes** = the planning runtime by [Nous Research](https://github.com/NousResearch/hermes-agent), vendored inside Clotho.
 
 ---
 
@@ -54,7 +58,7 @@ This project is our submission to **[AMD Developer Hackathon: ACT II](https://la
 
 Oneiro uses a **dual-agent architecture** to separate fast reflexes from slow planning:
 
-### 1. Reflex Agent (Motor Cortex) — Gemma 4 12B fine-tune (`oneiro-mc`)
+### 1. Reflex Agent (Motor Cortex) — the **Oneiro** model (Gemma 4 12B fine-tune, `oneiro-mc`)
 - Fine-tuned on PLAICraft behavior data for vision-based survival
 - Outputs UMAS action tokens (single-token classification, < 100ms target)
 - Handles combat, dodging, parkour, emergency survival
@@ -123,10 +127,22 @@ Clotho/
 │   │   ├── minecraft-body.ts # Connection lifecycle, observation/action API
 │   │   ├── state-extractor.ts# Extracts world state → Observation
 │   │   └── action-executor.ts# Executes goals → Mineflayer actions
-│   └── index.ts              # Entry point (body + reflex, planner pending)
+│   ├── mcp/
+│   │   └── body-server.ts    # MCP bridge: exposes the body to the Hermes planner
+│   ├── env.ts                # Shared .env loader for all entrypoints
+│   └── index.ts              # Standalone runner (body + reflex, planner pending)
 ├── docs/                     # Architecture, ADRs, tools, weaver
-├── package.json              # @celestis/clotho (zod + mineflayer + openai)
+├── TODO.md                   # Ground-truth build status & roadmap
+├── package.json              # @celestis/clotho (zod + mineflayer + mcp-sdk + openai)
 └── tsconfig.json
+```
+
+Run the MCP bridge (needs a Minecraft server + `MC_*` env vars):
+
+```bash
+npm run mcp   # starts src/mcp/body-server.ts on stdio
+# then connect the planner:
+#   hermes mcp add clotho-body --command "npx tsx src/mcp/body-server.ts"
 ```
 
 ---
@@ -135,24 +151,30 @@ Clotho/
 
 | Repo | What | URL |
 |------|------|-----|
-| **Clotho** (this) | Framework: schemas + reflex engine | [github.com/celestislab/Clotho](https://github.com/celestislab/Clotho) |
-| **Oneiro** | Product: Mineflayer body + Hermes planner + training | [github.com/celestislab/Oneiro](https://github.com/celestislab/Oneiro) |
-| **oneiro-mc** | Fine-tuned model (Gemma 4 12B LoRA) | [huggingface.co/Celestis-ai/oneiro-mc](https://huggingface.co/Celestis-ai/oneiro-mc) |
-| **Hermes** | Planning runtime (vendored in Oneiro) | [github.com/NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) |
+| **Clotho** (this) | The framework agents run on: Hermes runtime + TS надстройка (schemas, reflex, body, orchestrator) | [github.com/celestislab/Clotho](https://github.com/celestislab/Clotho) |
+| **Oneiro** | Our fine-tuned model + its training pipeline and demo | [github.com/celestislab/Oneiro](https://github.com/celestislab/Oneiro) |
+| **oneiro-mc** | The Oneiro model weights (Gemma 4 12B LoRA, Minecraft checkpoint) | [huggingface.co/Celestis-ai/oneiro-mc](https://huggingface.co/Celestis-ai/oneiro-mc) |
+| **Hermes** | Planning runtime, vendored inside Clotho (`src/hermes/`) | [github.com/NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) |
 
 ---
 
-## Installation (for Oneiro development)
+## Installation
 
-Clotho is consumed by Oneiro via a symlink (`Oneiro/src/clotho → ../Clotho/src`). Clone both repos side by side:
+All runnable code lives here in Clotho (`src/`, TypeScript). The Oneiro repo holds the model, its training pipeline, and the demo scripts — which launch this framework. Clone both side by side:
 
 ```bash
 git clone https://github.com/celestislab/Clotho.git
 git clone https://github.com/celestislab/Oneiro.git
-# Oneiro imports Clotho schemas + reflex through the symlink
+
+cd Clotho
+npm install
+npm run typecheck   # tsc --noEmit — the only quality gate
+
+# Vendor the Hermes planning runtime (not committed)
+git clone --depth 1 https://github.com/NousResearch/hermes-agent.git src/hermes && rm -rf src/hermes/.git
 ```
 
-See the [Oneiro README](https://github.com/celestislab/Oneiro) for full setup, demo, and training instructions.
+`Oneiro/demo/run-demo.sh` sets `CLOTHO_DIR=../Clotho` and runs the agent from here (`npx tsx src/index.ts --demo`). See the [Oneiro README](https://github.com/celestislab/Oneiro) for the model, training, and demo details.
 
 ---
 

@@ -18,8 +18,9 @@ Thumbs.db
 # Node
 node_modules/
 
-# Vendored Hermes (cloned at build time, see Oneiro/Dockerfile)
-src/hermes/
+# Vendored Hermes is committed as part of Clotho (the надстройка ships together
+# with its planning runtime as one unit). Its own node_modules / venv / caches
+# are still excluded by the rules above and below.
 
 # Python
 __pycache__/
