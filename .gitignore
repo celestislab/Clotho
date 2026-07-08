@@ -18,6 +18,9 @@ Thumbs.db
 # Node
 node_modules/
 
+# Vendored Hermes (cloned at build time, see Oneiro/Dockerfile)
+src/hermes/
+
 # Python
 __pycache__/
 *.pyc

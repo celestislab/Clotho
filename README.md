@@ -1,6 +1,6 @@
 # 🌙 Clotho Framework
 
-> **Autonomous Embodied VLA Agent Framework** — a TypeScript-native cognitive engine for embodied AI agents in 3D worlds. Provides the action/intent/observation contract and reflex engine that the [Oneiro](https://github.com/celestislab/Oneiro) product runs on.
+> **Autonomous Embodied VLA Agent Framework** — a fork of the [Hermes Agent](https://github.com/NousResearch/hermes-agent) runtime with TypeScript extensions for embodied AI agents in 3D worlds. Provides the action/intent/observation contract, reflex safety engine, and a Minecraft body adapter that the [Oneiro](https://github.com/celestislab/Oneiro) product runs on.
 
 <p>
   <a href="https://lablab.ai/ai-hackathons/amd-developer-hackathon-act-ii"><img alt="AMD Developer Hackathon: ACT II" src="https://img.shields.io/badge/Hackathon-AMD%20Developer%20Act%20II-ED1C24?style=flat-square"></a>
@@ -100,20 +100,20 @@ Oneiro uses a **dual-agent architecture** to separate fast reflexes from slow pl
 ```
 Clotho/
 ├── src/
+│   ├── hermes/               # Vendored Hermes Agent (Python, not committed)
 │   ├── schemas/              # UMAS contract (Zod-validated)
 │   │   ├── actions.ts        # 17 low-level primitives
 │   │   ├── intents.ts        # 7 high-level goals + GoalResult
 │   │   └── observation.ts    # Full world state structure
 │   ├── reflex/
 │   │   └── safety-guard.ts   # Reflex engine (EmergencyStoppable interface)
-│   └── index.ts              # Barrel exports
-├── docs/
-│   ├── architecture.md       # Dual-agent VLA architecture (full)
-│   ├── ADR-001-architecture.md  # Why dual-agent, not one LLM
-│   ├── tools.md              # UMAS token taxonomy + MCP tools
-│   ├── weaver.md             # Data collection pipeline
-│   └── architecture/clotho_core.md  # C++ core vision (post-hackathon)
-├── package.json              # @celestis/clotho (zod only, no game deps)
+│   ├── body/                 # Minecraft body adapter (Mineflayer)
+│   │   ├── minecraft-body.ts # Connection lifecycle, observation/action API
+│   │   ├── state-extractor.ts# Extracts world state → Observation
+│   │   └── action-executor.ts# Executes goals → Mineflayer actions
+│   └── index.ts              # Entry point (body + reflex, planner pending)
+├── docs/                     # Architecture, ADRs, tools, weaver
+├── package.json              # @celestis/clotho (zod + mineflayer + openai)
 └── tsconfig.json
 ```
 
