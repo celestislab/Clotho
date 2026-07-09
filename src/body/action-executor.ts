@@ -1,13 +1,11 @@
 import type { Bot } from "mineflayer";
-import pathfinderPkg, { Movements } from "mineflayer-pathfinder";
+import pathfinderPkg from "mineflayer-pathfinder";
+import type { Movements as MovementsInstance } from "mineflayer-pathfinder";
+const { Movements, goals } = pathfinderPkg;
 import { Vec3 } from "vec3";
 import type { Goal, GoalResult } from "../schemas/intents.js";
 import type { SafetyGuard } from "../reflex/safety-guard.js";
 
-// `goals` is a CJS named export that Node's ESM interop does not surface as a
-// named binding (only `Movements`/`pathfinder` are detected), so pull it off
-// the default import instead.
-const { goals } = pathfinderPkg;
 const { GoalNear, GoalXZ, GoalBlock, GoalFollow } = goals;
 
 export interface ExecutionResult {
@@ -15,7 +13,7 @@ export interface ExecutionResult {
   message: string;
 }
 
-function makeMovements(bot: Bot): Movements {
+function makeMovements(bot: Bot): MovementsInstance {
   const movements = new Movements(bot);
   movements.allowSprinting = true;
   movements.canDig = true;
