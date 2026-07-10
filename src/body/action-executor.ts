@@ -139,6 +139,13 @@ async function mineBlocks(
       await bot.dig(block, true);
       mined++;
       bot.chat(`/say Oneiro mined ${blockName} (${mined}/${count})`);
+      
+      // Step forward to pick up the dropped item
+      try {
+        await navigateTo(bot, block.position, guard, 1);
+      } catch (e) {
+        // ignore navigation errors after dig
+      }
     } catch (err) {
       failures++;
       const msg = err instanceof Error ? err.message : String(err);
@@ -168,10 +175,13 @@ async function craftItem(
     return { success: false, message: `No recipe for ${cleanedName}` };
   }
 
-  const craftingTableBlock = bot.findBlock({
-    matching: bot.registry.blocksByName["crafting_table"]?.id ?? -1,
-    maxDistance: 32,
-  });
+  const requiresTable = recipes[0]!.requiresTable;
+  const craftingTableBlock = requiresTable
+    ? bot.findBlock({
+        matching: bot.registry.blocksByName["crafting_table"]?.id ?? -1,
+        maxDistance: 32,
+      })
+    : null;
 
   try {
     guard.incrementSteps();
@@ -264,7 +274,8 @@ async function survive(bot: Bot, guard: SafetyGuard): Promise<ExecutionResult> {
   let closestDist = Infinity;
   for (const id in bot.entities) {
     const entity = bot.entities[id];
-    if (entity && entity.type === "mob" && hostileMobNames.includes(entity.name ?? "")) {
+    const cleanName = entity?.name ? cleanItemName(entity.name) : "";
+    if (entity && entity.type === "mob" && hostileMobNames.includes(cleanName)) {
       const dist = bot.entity.position.distanceTo(entity.position);
       if (dist < closestDist && dist < 16) {
         closestDist = dist;

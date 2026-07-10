@@ -63,15 +63,20 @@ const PASSIVE_ANIMALS = new Set([
   "strider",
 ]);
 
+function cleanItemName(name: string): string {
+  return name.startsWith("minecraft:") ? name.slice(10) : name;
+}
+
 function classifyEntity(name: string): NearbyEntity["type"] {
-  if (PASSIVE_ANIMALS.has(name)) return "animal";
-  if (HOSTILE_MOBS.has(name)) return "mob";
-  if (name === "item" || name === "xp_orb") return "item";
+  const clean = cleanItemName(name);
+  if (PASSIVE_ANIMALS.has(clean)) return "animal";
+  if (HOSTILE_MOBS.has(clean)) return "mob";
+  if (clean === "item" || clean === "xp_orb") return "item";
   return "mob";
 }
 
 function isHostile(name: string): boolean {
-  return HOSTILE_MOBS.has(name);
+  return HOSTILE_MOBS.has(cleanItemName(name));
 }
 
 function directionTo(delta: Vec3): NearbyBlock["direction"] {
@@ -190,7 +195,7 @@ export function extractObservation(
   const pos = bot.entity.position;
   const nearbyEntities = scanNearbyEntities(bot, 32);
   const hasHostile = nearbyEntities.some(
-    (e) => e.is_hostile && e.distance < 16,
+    (e) => e.is_hostile && e.distance < 16 && Math.abs(pos.y - e.position.y) < 5,
   );
   const lowHealth = bot.health < 10;
   const heldItem = bot.heldItem;

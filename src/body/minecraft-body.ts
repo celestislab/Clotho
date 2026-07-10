@@ -94,6 +94,7 @@ export class MinecraftBody {
 
     bot.on("chat", (username: string, message: string) => {
       if (username === this.config.username) return;
+      this.pushEvent(`[Chat] ${username}: ${message}`);
       this.events.onChat?.(username, message);
     });
 
