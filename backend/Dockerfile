@@ -22,11 +22,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # --- Stage 1: Build the TypeScript Bridge ---
 WORKDIR /opt/clotho
 # Copy TS dependencies first for layer caching
-COPY Clotho/package.json Clotho/package-lock.json* ./
+COPY package.json package-lock.json* ./
 RUN npm install
 
 # Copy TS source code and verify build
-COPY Clotho/ ./
+COPY src/ ./src/
+COPY tsconfig.json ./
 
 # --- Stage 2: Build the Python Backend ---
 WORKDIR /opt/backend

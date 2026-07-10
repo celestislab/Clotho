@@ -21,12 +21,17 @@ function makeMovements(bot: Bot): MovementsInstance {
   return movements;
 }
 
+function cleanItemName(name: string): string {
+  return name.startsWith("minecraft:") ? name.slice(10) : name;
+}
+
 function findNearestBlock(
   bot: Bot,
   blockName: string,
   maxDistance = 32,
 ): { position: Vec3; distance: number } | null {
-  const matching = bot.registry.blocksByName[blockName];
+  const cleaned = cleanItemName(blockName);
+  const matching = bot.registry.blocksByName[cleaned];
   if (!matching) return null;
   const ids = bot.findBlocks({
     matching: matching.id,
@@ -102,15 +107,16 @@ async function mineBlocks(
   let mined = 0;
   let failures = 0;
   const maxFailures = 3;
+  const cleanedName = cleanItemName(blockName);
 
   while (mined < count && failures < maxFailures && guard.shouldContinue()) {
     guard.incrementSteps();
-    const found = findNearestBlock(bot, blockName, 32);
+    const found = findNearestBlock(bot, cleanedName, 32);
     if (!found) {
       if (mined > 0) {
-        return { success: true, message: `Mined ${mined}/${count} ${blockName}, no more nearby` };
+        return { success: true, message: `Mined ${mined}/${count} ${cleanedName}, no more nearby` };
       }
-      return { success: false, message: `No ${blockName} found within 32 blocks` };
+      return { success: false, message: `No ${cleanedName} found within 32 blocks` };
     }
 
     const navResult = await navigateTo(bot, found.position, guard, 3);
@@ -120,7 +126,7 @@ async function mineBlocks(
     }
 
     const block = bot.blockAt(found.position);
-    if (!block || block.name !== blockName) {
+    if (!block || block.name !== cleanedName) {
       failures++;
       continue;
     }
@@ -152,13 +158,14 @@ async function craftItem(
   count: number,
   guard: SafetyGuard,
 ): Promise<ExecutionResult> {
-  const item = bot.registry.itemsByName[itemName];
+  const cleanedName = cleanItemName(itemName);
+  const item = bot.registry.itemsByName[cleanedName];
   if (!item) {
-    return { success: false, message: `Unknown item: ${itemName}` };
+    return { success: false, message: `Unknown item: ${cleanedName}` };
   }
   const recipes = bot.recipesFor(item.id, null, 1, null);
   if (!recipes || recipes.length === 0) {
-    return { success: false, message: `No recipe for ${itemName}` };
+    return { success: false, message: `No recipe for ${cleanedName}` };
   }
 
   const craftingTableBlock = bot.findBlock({
@@ -182,9 +189,10 @@ async function placeBlockAt(
   position: Vec3,
   guard: SafetyGuard,
 ): Promise<ExecutionResult> {
-  const item = bot.inventory.items().find((i) => i.name === blockName);
+  const cleanedName = cleanItemName(blockName);
+  const item = bot.inventory.items().find((i) => i.name === cleanedName);
   if (!item) {
-    return { success: false, message: `No ${blockName} in inventory` };
+    return { success: false, message: `No ${cleanedName} in inventory` };
   }
 
   const navResult = await navigateTo(bot, position, guard, 2);

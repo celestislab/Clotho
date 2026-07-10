@@ -13,11 +13,11 @@ class Settings(BaseSettings):
     # --- LLM API Settings ---
     llm_api_key: str = Field(default="", alias="LLM_API_KEY")
     llm_base_url: str = Field(default="https://api.fireworks.ai/inference/v1", alias="LLM_BASE_URL")
-    llm_model: str = Field(default="accounts/fireworks/models/gemma2-9b-it", alias="LLM_MODEL")
+    llm_model: str = Field(default="gemini-3.5-flash", alias="LLM_MODEL")
 
     # --- Clotho TS Settings ---
     # Path where Clotho TS is located so we can run commands inside it
-    clotho_ts_dir: str = Field(default="c:/Users/ks875/OneDrive/Desktop/Github/Clotho/Clotho", alias="CLOTHO_TS_DIR")
+    clotho_ts_dir: str = Field(default="..", alias="CLOTHO_TS_DIR")
 
     # --- Minecraft Settings ---
     mc_host: str = Field(default="127.0.0.1", alias="MC_HOST")
