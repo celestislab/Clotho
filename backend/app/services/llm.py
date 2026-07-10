@@ -34,7 +34,8 @@ Rules for deciding:
 2. GATHER WOOD: If you have no wood (minecraft:oak_log or other log) in inventory_summary, choose MINE_TASK for minecraft:oak_log.
 3. CRAFTING: If you have logs, choose CRAFT_TASK for minecraft:oak_planks, then minecraft:crafting_table.
 4. SPATIAL TARGETS: If navigating (GOTO), make sure to specify target coordinates in position.
-5. KEEP IT SIMPLE: Only issue one logical goal at a time.
+5. PHYSICAL LIMITATIONS: You jump poorly and cannot scale tall vertical cliffs. When picking mine/movement targets, prefer coordinates at similar heights. Do not target coordinates suspended in the air.
+6. KEEP IT SIMPLE: Only issue one logical goal at a time.
 """
 
 class HybridLLMClient:

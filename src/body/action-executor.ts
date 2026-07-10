@@ -17,7 +17,8 @@ function makeMovements(bot: Bot): MovementsInstance {
   const movements = new Movements(bot);
   movements.allowSprinting = true;
   movements.canDig = true;
-  movements.maxDropDown = 4;
+  movements.allowParkour = true; // Enables jumping across 1-block gaps
+  movements.maxDropDown = 3;
   return movements;
 }
 
