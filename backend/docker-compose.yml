@@ -1,0 +1,33 @@
+# ==============================================================================
+# Oneiro Agent Backend Docker-Compose Orchestration
+# Used to build and launch the container with correct environment configurations.
+# ==============================================================================
+
+version: "3.8"
+
+services:
+  oneiro-backend:
+    container_name: oneiro-backend
+    build:
+      # Build context is the parent directory (workspace root) 
+      # so the Dockerfile has access to both 'Clotho' and 'backend'
+      context: ..
+      dockerfile: backend/Dockerfile
+    
+    # Share the host's network namespace (critical on Linux so that localhost/127.0.0.1
+    # inside the container can reach the Minecraft server running on the host machine).
+    #
+    # NOTE: If testing on Windows/macOS where host network mode is not supported, 
+    # you can comment out 'network_mode: "host"', uncomment the 'ports' block, 
+    # and configure MC_HOST to 'host.docker.internal'.
+    network_mode: "host"
+    
+    # ports:
+    #   - "8000:8000"
+
+    # Load environment variables from the local .env file
+    env_file:
+      - .env
+
+    # Restart policy
+    restart: unless-stopped

@@ -17,8 +17,13 @@ function makeMovements(bot: Bot): MovementsInstance {
   const movements = new Movements(bot);
   movements.allowSprinting = true;
   movements.canDig = true;
-  movements.maxDropDown = 4;
+  movements.allowParkour = true; // Enables jumping across 1-block gaps
+  movements.maxDropDown = 3;
   return movements;
+}
+
+function cleanItemName(name: string): string {
+  return name.startsWith("minecraft:") ? name.slice(10) : name;
 }
 
 function findNearestBlock(
@@ -26,7 +31,8 @@ function findNearestBlock(
   blockName: string,
   maxDistance = 32,
 ): { position: Vec3; distance: number } | null {
-  const matching = bot.registry.blocksByName[blockName];
+  const cleaned = cleanItemName(blockName);
+  const matching = bot.registry.blocksByName[cleaned];
   if (!matching) return null;
   const ids = bot.findBlocks({
     matching: matching.id,
@@ -102,15 +108,16 @@ async function mineBlocks(
   let mined = 0;
   let failures = 0;
   const maxFailures = 3;
+  const cleanedName = cleanItemName(blockName);
 
   while (mined < count && failures < maxFailures && guard.shouldContinue()) {
     guard.incrementSteps();
-    const found = findNearestBlock(bot, blockName, 32);
+    const found = findNearestBlock(bot, cleanedName, 32);
     if (!found) {
       if (mined > 0) {
-        return { success: true, message: `Mined ${mined}/${count} ${blockName}, no more nearby` };
+        return { success: true, message: `Mined ${mined}/${count} ${cleanedName}, no more nearby` };
       }
-      return { success: false, message: `No ${blockName} found within 32 blocks` };
+      return { success: false, message: `No ${cleanedName} found within 32 blocks` };
     }
 
     const navResult = await navigateTo(bot, found.position, guard, 3);
@@ -120,7 +127,7 @@ async function mineBlocks(
     }
 
     const block = bot.blockAt(found.position);
-    if (!block || block.name !== blockName) {
+    if (!block || block.name !== cleanedName) {
       failures++;
       continue;
     }
@@ -133,6 +140,13 @@ async function mineBlocks(
       await bot.dig(block, true);
       mined++;
       bot.chat(`/say Oneiro mined ${blockName} (${mined}/${count})`);
+      
+      // Step forward to pick up the dropped item
+      try {
+        await navigateTo(bot, block.position, guard, 1);
+      } catch (e) {
+        // ignore navigation errors after dig
+      }
     } catch (err) {
       failures++;
       const msg = err instanceof Error ? err.message : String(err);
@@ -152,19 +166,23 @@ async function craftItem(
   count: number,
   guard: SafetyGuard,
 ): Promise<ExecutionResult> {
-  const item = bot.registry.itemsByName[itemName];
+  const cleanedName = cleanItemName(itemName);
+  const item = bot.registry.itemsByName[cleanedName];
   if (!item) {
-    return { success: false, message: `Unknown item: ${itemName}` };
+    return { success: false, message: `Unknown item: ${cleanedName}` };
   }
   const recipes = bot.recipesFor(item.id, null, 1, null);
   if (!recipes || recipes.length === 0) {
-    return { success: false, message: `No recipe for ${itemName}` };
+    return { success: false, message: `No recipe for ${cleanedName}` };
   }
 
-  const craftingTableBlock = bot.findBlock({
-    matching: bot.registry.blocksByName["crafting_table"]?.id ?? -1,
-    maxDistance: 32,
-  });
+  const requiresTable = recipes[0]!.requiresTable;
+  const craftingTableBlock = requiresTable
+    ? bot.findBlock({
+        matching: bot.registry.blocksByName["crafting_table"]?.id ?? -1,
+        maxDistance: 32,
+      })
+    : null;
 
   try {
     guard.incrementSteps();
@@ -182,9 +200,10 @@ async function placeBlockAt(
   position: Vec3,
   guard: SafetyGuard,
 ): Promise<ExecutionResult> {
-  const item = bot.inventory.items().find((i) => i.name === blockName);
+  const cleanedName = cleanItemName(blockName);
+  const item = bot.inventory.items().find((i) => i.name === cleanedName);
   if (!item) {
-    return { success: false, message: `No ${blockName} in inventory` };
+    return { success: false, message: `No ${cleanedName} in inventory` };
   }
 
   const navResult = await navigateTo(bot, position, guard, 2);
@@ -245,11 +264,62 @@ async function followPlayer(
 }
 
 async function survive(bot: Bot, guard: SafetyGuard): Promise<ExecutionResult> {
+  const hostileMobNames = [
+    "zombie", "creeper", "skeleton", "spider", "witch", "enderman", 
+    "phantom", "husk", "drowned", "slime", "magma_cube", "cave_spider", 
+    "hoglin", "piglin", "pillager", "ravager", "evoker", "vindicator"
+  ];
+
+  // 1. Scan for the closest hostile mob within a 16-block radius
+  let closestMob: any = null;
+  let closestDist = Infinity;
+  for (const id in bot.entities) {
+    const entity = bot.entities[id];
+    const cleanName = entity?.name ? cleanItemName(entity.name) : "";
+    if (entity && entity.type === "mob" && hostileMobNames.includes(cleanName)) {
+      const dist = bot.entity.position.distanceTo(entity.position);
+      if (dist < closestDist && dist < 16) {
+        closestDist = dist;
+        closestMob = entity;
+      }
+    }
+  }
+
+  // 2. Flee from the hostile mob if detected
+  if (closestMob) {
+    const diff = bot.entity.position.minus(closestMob.position);
+    diff.y = 0; // Maintain level plane
+    if (diff.norm() === 0) {
+      diff.x = 1; // Default fallback direction
+    }
+    
+    // Calculate flee target coordinate 12 blocks away
+    const fleeTarget = bot.entity.position.plus(diff.normalize().scale(12));
+    const target = new Vec3(
+      Math.round(fleeTarget.x),
+      Math.round(fleeTarget.y),
+      Math.round(fleeTarget.z)
+    );
+
+    bot.chat(`/say Warning: Fleeing from ${closestMob.name} (${closestDist.toFixed(1)}m away)`);
+    
+    // Enable sprinting state and run to safety
+    bot.setControlState("sprint", true);
+    const navResult = await navigateTo(bot, target, guard, 2);
+    bot.setControlState("sprint", false);
+    
+    return {
+      success: navResult.success,
+      message: `Fled from ${closestMob.name}: ${navResult.message}`,
+    };
+  }
+
+  // 3. Fallback to eating food if hunger is low
   if (bot.food < 18) {
     const foodItem = bot.inventory
       .items()
       .find((i) =>
-        ["bread", "cooked_beef", "cooked_porkchop", "cooked_cod", "apple", "carrot", "baked_potato"].includes(
+        ["bread", "cooked_beef", "cooked_porkchop", "cooked_cod", "apple", "carrot", "baked_potato", "cooked_chicken", "cooked_mutton"].includes(
           i.name,
         ),
       );
@@ -266,21 +336,12 @@ async function survive(bot: Bot, guard: SafetyGuard): Promise<ExecutionResult> {
     }
   }
 
-  if (bot.health < 10) {
-    const safestDirection = bot.entity.position.offset(0, 1, 0);
-    const navResult = await navigateTo(bot, safestDirection, guard, 0);
-    guard.incrementSteps();
-    return {
-      success: navResult.success,
-      message: "Fleeing to safety (low health)",
-    };
-  }
-
+  // 4. Default safe assessment (sneak)
   bot.setControlState("sneak", true);
   await new Promise((r) => setTimeout(r, 2000));
   bot.setControlState("sneak", false);
   guard.incrementSteps();
-  return { success: true, message: "Assessed situation, no immediate action needed" };
+  return { success: true, message: "Assessed situation, area is clear of threats" };
 }
 
 export async function executeGoal(

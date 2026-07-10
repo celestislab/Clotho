@@ -76,6 +76,9 @@ export class MinecraftBody {
       if (this.guard.shouldStop(bot.health, bot.food)) {
         this.guard.triggerEmergency(bot, "Low health/food");
         this.pushEvent(`Emergency: health=${bot.health.toFixed(0)} food=${bot.food.toFixed(0)}`);
+      } else if (this.guard.isEmergency && this.guard.emergencyReasonText === "Low health/food") {
+        this.guard.clearEmergency();
+        this.pushEvent(`Emergency cleared: health=${bot.health.toFixed(0)} food=${bot.food.toFixed(0)}`);
       }
     });
 
@@ -91,6 +94,7 @@ export class MinecraftBody {
 
     bot.on("chat", (username: string, message: string) => {
       if (username === this.config.username) return;
+      this.pushEvent(`[Chat] ${username}: ${message}`);
       this.events.onChat?.(username, message);
     });
 
