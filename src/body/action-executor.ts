@@ -289,7 +289,7 @@ async function survive(bot: Bot, guard: SafetyGuard): Promise<ExecutionResult> {
   if (closestMob) {
     const diff = bot.entity.position.minus(closestMob.position);
     diff.y = 0; // Maintain level plane
-    if (diff.length() === 0) {
+    if (diff.norm() === 0) {
       diff.x = 1; // Default fallback direction
     }
     
