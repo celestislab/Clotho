@@ -245,11 +245,61 @@ async function followPlayer(
 }
 
 async function survive(bot: Bot, guard: SafetyGuard): Promise<ExecutionResult> {
+  const hostileMobNames = [
+    "zombie", "creeper", "skeleton", "spider", "witch", "enderman", 
+    "phantom", "husk", "drowned", "slime", "magma_cube", "cave_spider", 
+    "hoglin", "piglin", "pillager", "ravager", "evoker", "vindicator"
+  ];
+
+  // 1. Scan for the closest hostile mob within a 16-block radius
+  let closestMob: any = null;
+  let closestDist = Infinity;
+  for (const id in bot.entities) {
+    const entity = bot.entities[id];
+    if (entity && entity.type === "mob" && hostileMobNames.includes(entity.name ?? "")) {
+      const dist = bot.entity.position.distanceTo(entity.position);
+      if (dist < closestDist && dist < 16) {
+        closestDist = dist;
+        closestMob = entity;
+      }
+    }
+  }
+
+  // 2. Flee from the hostile mob if detected
+  if (closestMob) {
+    const diff = bot.entity.position.minus(closestMob.position);
+    diff.y = 0; // Maintain level plane
+    if (diff.length() === 0) {
+      diff.x = 1; // Default fallback direction
+    }
+    
+    // Calculate flee target coordinate 12 blocks away
+    const fleeTarget = bot.entity.position.plus(diff.normalize().scale(12));
+    const target = new Vec3(
+      Math.round(fleeTarget.x),
+      Math.round(fleeTarget.y),
+      Math.round(fleeTarget.z)
+    );
+
+    bot.chat(`/say Warning: Fleeing from ${closestMob.name} (${closestDist.toFixed(1)}m away)`);
+    
+    // Enable sprinting state and run to safety
+    bot.setControlState("sprint", true);
+    const navResult = await navigateTo(bot, target, guard, 2);
+    bot.setControlState("sprint", false);
+    
+    return {
+      success: navResult.success,
+      message: `Fled from ${closestMob.name}: ${navResult.message}`,
+    };
+  }
+
+  // 3. Fallback to eating food if hunger is low
   if (bot.food < 18) {
     const foodItem = bot.inventory
       .items()
       .find((i) =>
-        ["bread", "cooked_beef", "cooked_porkchop", "cooked_cod", "apple", "carrot", "baked_potato"].includes(
+        ["bread", "cooked_beef", "cooked_porkchop", "cooked_cod", "apple", "carrot", "baked_potato", "cooked_chicken", "cooked_mutton"].includes(
           i.name,
         ),
       );
@@ -266,21 +316,12 @@ async function survive(bot: Bot, guard: SafetyGuard): Promise<ExecutionResult> {
     }
   }
 
-  if (bot.health < 10) {
-    const safestDirection = bot.entity.position.offset(0, 1, 0);
-    const navResult = await navigateTo(bot, safestDirection, guard, 0);
-    guard.incrementSteps();
-    return {
-      success: navResult.success,
-      message: "Fleeing to safety (low health)",
-    };
-  }
-
+  // 4. Default safe assessment (sneak)
   bot.setControlState("sneak", true);
   await new Promise((r) => setTimeout(r, 2000));
   bot.setControlState("sneak", false);
   guard.incrementSteps();
-  return { success: true, message: "Assessed situation, no immediate action needed" };
+  return { success: true, message: "Assessed situation, area is clear of threats" };
 }
 
 export async function executeGoal(

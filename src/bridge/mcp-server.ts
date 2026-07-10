@@ -46,11 +46,11 @@ export function createBridgeServer(body: MinecraftBody): McpServer {
     "Send a high-level goal to the body (GOTO, MINE_TASK, CRAFT_TASK, PLACE_TASK, FOLLOW_PLAYER, SURVIVE, IDLE). Executes via the action-executor and respects SafetyGuard interrupts. Returns the GoalResult once execution finishes.",
     GoalSchema.shape,
     async (goal) => {
-      if (body.safetyGuard.isEmergency) {
+      if (body.safetyGuard.isEmergency && goal.intent !== "SURVIVE" && goal.intent !== "IDLE") {
         const blocked: GoalResult = {
           goal_id: `blocked_${Date.now()}`,
           success: false,
-          message: `Rejected: SafetyGuard is in emergency state (${body.safetyGuard.emergencyReasonText})`,
+          message: `Rejected: SafetyGuard is in emergency state (${body.safetyGuard.emergencyReasonText}). Only SURVIVE or IDLE goals are allowed.`,
           steps_taken: 0,
           elapsed_ms: 0,
         };

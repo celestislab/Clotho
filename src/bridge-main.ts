@@ -70,6 +70,9 @@ async function main(): Promise<void> {
       const obs = body.observe();
       if (guard.shouldStop(obs.health, obs.food)) {
         body.emergencyStop(`Low health/food: hp=${obs.health} food=${obs.food}`);
+      } else if (guard.isEmergency) {
+        guard.clearEmergency();
+        console.error(`[SAFETY] Emergency cleared: hp=${obs.health} food=${obs.food}`);
       }
     },
   });
