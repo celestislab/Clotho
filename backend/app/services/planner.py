@@ -22,6 +22,7 @@ class AutonomousPlanner:
         self.last_thought: str = "No planning cycle has run yet."
         self.last_result: Optional[GoalResult] = None
         self.last_state: Optional[dict] = None
+        self.history = []  # Rolling memory buffer of past thoughts, goals, and results
         self._task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
 
@@ -32,6 +33,8 @@ class AutonomousPlanner:
                 logger.warning("Planner loop is already active.")
                 return
             self.is_active = True
+            # Clear history on loop start
+            self.history.clear()
             # Spawn the ticker as a background task on the asyncio event loop
             self._task = asyncio.create_task(self._loop())
             logger.info("Autonomous planner loop activated.")
@@ -65,9 +68,9 @@ class AutonomousPlanner:
             self.last_state = state.model_dump()
             logger.info(f"[Planner] State: HP={state.health:.0f} Food={state.food:.0f} danger={state.is_in_danger}")
             
-            # 2. PLAN: Pass the state to the LLM (or mock rules) to decide next goal
+            # 2. PLAN: Pass the state and memory history to LLM to decide next goal
             logger.info("[Planner] Planning next goal with LLM...")
-            planner_response = await llm_client.get_next_goal(state)
+            planner_response = await llm_client.get_next_goal(state, self.history)
             self.last_thought = planner_response.thought
             self.current_goal = planner_response.goal
             
@@ -78,6 +81,18 @@ class AutonomousPlanner:
             logger.info("[Planner] Sending goal to Minecraft body...")
             result = await mcp_client.set_goal(self.current_goal)
             self.last_result = result
+            
+            # Record execution outcome into rolling memory history
+            self.history.append({
+                "thought": self.last_thought,
+                "goal": self.current_goal.model_dump(exclude_none=True),
+                "result": {
+                    "success": result.success,
+                    "message": result.message
+                }
+            })
+            if len(self.history) > 5:
+                self.history.pop(0)
             
             logger.info(f"[Planner] Goal Result: success={result.success} steps={result.steps_taken} elapsed={result.elapsed_ms/1000:.1f}s message='{result.message}'")
             logger.info("---- END PLANNING CYCLE (SUCCESS) ----")

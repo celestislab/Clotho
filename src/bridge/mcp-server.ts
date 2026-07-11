@@ -58,8 +58,16 @@ export function createBridgeServer(body: MinecraftBody): McpServer {
         return { content: [{ type: "text", text: JSON.stringify(blocked) }] };
       }
 
+      const targetStr = goal.target ? ` [${goal.target}]` : "";
+      const reasonStr = goal.reason ? ` ("${goal.reason}")` : "";
+      body.say(`/say Thinking... Executing goal: ${goal.intent}${targetStr}${reasonStr}`);
+
       const result = await body.act(goal);
       lastGoalResult = result;
+      
+      const statusSymbol = result.success ? "✅" : "❌";
+      body.say(`/say Goal status: ${statusSymbol} ${result.message}`);
+      
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
   );

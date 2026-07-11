@@ -13,7 +13,7 @@ logger = logging.getLogger("clotho.llm")
 # System prompt defining the instructions for Gemma.
 # It includes the exact JSON schema that Gemma must output.
 SYSTEM_PROMPT = """You are Oneiro, the Prefrontal Cortex (strategic planning brain) of an autonomous Minecraft agent.
-Your job is to read the current world observation and decide the next strategic high-level Goal for the bot.
+Your job is to read the current world observation and the recent execution history, then decide the next strategic high-level Goal for the bot.
 
 You must output a single JSON object matching this schema:
 {
@@ -24,7 +24,7 @@ You must output a single JSON object matching this schema:
     "count": integer (1-64, optional),
     "position": {"x": float, "y": float, "z": float} (optional),
     "priority": "low" | "normal" | "high" | "critical",
-    "reason": "short explanation of this goal"
+    "reason": "short explanation of this goal to announce in Minecraft chat (max 200 characters)"
   },
   "confidence": float (0.0 to 1.0)
 }
@@ -34,8 +34,9 @@ Rules for deciding:
 2. GATHER WOOD: If you have no wood (minecraft:oak_log or other log) in inventory_summary, choose MINE_TASK for minecraft:oak_log.
 3. CRAFTING: If you have logs, choose CRAFT_TASK for minecraft:oak_planks, then minecraft:crafting_table.
 4. SPATIAL TARGETS: If navigating (GOTO), make sure to specify target coordinates in position.
-5. PHYSICAL LIMITATIONS: You jump poorly and cannot scale tall vertical cliffs. When picking mine/movement targets, prefer coordinates at similar heights. Do not target coordinates suspended in the air.
-6. KEEP IT SIMPLE: Only issue one logical goal at a time.
+5. PHYSICAL LIMITATIONS & RELIEF: You jump poorly and cannot scale tall vertical cliffs. Use the 'terrain_relief' field to assess heights relative to you (Y coordinate). A delta Y value of +1 or +2 means a slope/step up. A value of +3 or higher means a wall/cliff. A negative value means falling terrain. Avoid navigating straight into high walls or deep drops.
+6. MEMORY AWARENESS: Review your 'recent action history'. If a previous goal failed, do not immediately repeat the exact same goal parameters. Analyze why it failed (e.g., Navigation failed, Block not found) and try a different location or path.
+7. KEEP IT SIMPLE: Only issue one logical goal at a time.
 """
 
 class HybridLLMClient:
@@ -54,12 +55,19 @@ class HybridLLMClient:
                 base_url=settings.llm_base_url
             )
 
-    async def get_next_goal(self, observation: Observation) -> PlannerResponse:
-        """Sends the observation to the LLM and retrieves the next structured Goal with retries."""
+    async def get_next_goal(self, observation: Observation, history: list = None) -> PlannerResponse:
+        """Sends the observation and memory history to the LLM and retrieves the next structured Goal with retries."""
         if settings.is_mock_mode:
             return self._generate_mock_goal(observation)
         
         obs_json = observation.model_dump_json(indent=2)
+        
+        # Build user message content including history if present
+        user_content = f"Here is the current game state:\n{obs_json}\n\n"
+        if history:
+            history_json = json.dumps(history, indent=2)
+            user_content += f"Here is your recent action history (most recent last):\n{history_json}\n\n"
+        user_content += "Decide the next action based on this state and history."
         
         max_retries = 3
         backoff = 1.0
@@ -71,7 +79,7 @@ class HybridLLMClient:
                     model=settings.llm_model,
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": f"Here is the current game state:\n{obs_json}"}
+                        {"role": "user", "content": user_content}
                     ],
                     # Force JSON output mode if supported by the provider
                     response_format={"type": "json_object"},

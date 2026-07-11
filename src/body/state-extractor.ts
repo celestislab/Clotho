@@ -188,6 +188,17 @@ function scanNearbyEntities(bot: Bot, radius: number): NearbyEntity[] {
   return result.sort((a, b) => a.distance - b.distance).slice(0, 10);
 }
 
+function getHighestTerrainHeight(bot: Bot, x: number, z: number, currentY: number): number {
+  for (let dy = 6; dy >= -6; dy--) {
+    const checkPos = new Vec3(x, currentY + dy, z);
+    const block = bot.blockAt(checkPos);
+    if (block && block.name !== "air" && block.name !== "cave_air" && block.name !== "void_air") {
+      return checkPos.y;
+    }
+  }
+  return currentY;
+}
+
 export function extractObservation(
   bot: Bot,
   eventLog: string[],
@@ -201,6 +212,34 @@ export function extractObservation(
   const heldItem = bot.heldItem;
   const blockAtFeet = bot.blockAt(pos);
   const biome = blockAtFeet?.biome?.name ?? "unknown";
+
+  const currentY = Math.floor(pos.y);
+  const centerHeight = getHighestTerrainHeight(bot, Math.floor(pos.x), Math.floor(pos.z), currentY) - currentY;
+  const northHeight = getHighestTerrainHeight(bot, Math.floor(pos.x), Math.floor(pos.z) - 3, currentY) - currentY;
+  const southHeight = getHighestTerrainHeight(bot, Math.floor(pos.x), Math.floor(pos.z) + 3, currentY) - currentY;
+  const eastHeight = getHighestTerrainHeight(bot, Math.floor(pos.x) + 3, Math.floor(pos.z), currentY) - currentY;
+  const westHeight = getHighestTerrainHeight(bot, Math.floor(pos.x) - 3, Math.floor(pos.z), currentY) - currentY;
+
+  let highest_nearby_block: string | undefined = undefined;
+  let lowest_nearby_block: string | undefined = undefined;
+  let highestVal = -Infinity;
+  let lowestVal = Infinity;
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      const h = getHighestTerrainHeight(bot, Math.floor(pos.x) + dx, Math.floor(pos.z) + dz, currentY);
+      const b = bot.blockAt(new Vec3(Math.floor(pos.x) + dx, h, Math.floor(pos.z) + dz));
+      if (b && b.name !== "air") {
+        if (h > highestVal) {
+          highestVal = h;
+          highest_nearby_block = b.name;
+        }
+        if (h < lowestVal) {
+          lowestVal = h;
+          lowest_nearby_block = b.name;
+        }
+      }
+    }
+  }
 
   return {
     timestamp: Date.now(),
@@ -220,6 +259,15 @@ export function extractObservation(
     inventory_summary: compactInventory(bot),
     nearby_blocks: scanNearbyBlocks(bot, 16),
     nearby_entities: nearbyEntities,
+    terrain_relief: {
+      center: centerHeight,
+      north: northHeight,
+      south: southHeight,
+      east: eastHeight,
+      west: westHeight,
+      highest_nearby_block,
+      lowest_nearby_block,
+    },
     recent_events: eventLog.slice(-5),
   };
 }

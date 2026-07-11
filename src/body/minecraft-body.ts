@@ -82,6 +82,49 @@ export class MinecraftBody {
       }
     });
 
+    let lastHostileCheck = 0;
+    bot.on("physicsTick", () => {
+      const now = Date.now();
+      if (now - lastHostileCheck < 500) return;
+      lastHostileCheck = now;
+
+      if (!this.running || !this.bot) return;
+
+      const pos = bot.entity.position;
+      const hostileMobNames = [
+        "zombie", "creeper", "skeleton", "spider", "witch", "enderman", 
+        "phantom", "husk", "drowned", "slime", "magma_cube", "cave_spider", 
+        "hoglin", "piglin", "pillager", "ravager", "evoker", "vindicator"
+      ];
+      
+      let closestMob: any = null;
+      let closestDist = Infinity;
+      for (const id in bot.entities) {
+        const entity = bot.entities[id];
+        if (entity && entity.type === "mob" && entity.name && hostileMobNames.includes(entity.name)) {
+          const dist = pos.distanceTo(entity.position);
+          if (dist < closestDist) {
+            closestDist = dist;
+            closestMob = entity;
+          }
+        }
+      }
+
+      if (closestMob && closestDist < 10 && Math.abs(pos.y - closestMob.position.y) < 5) {
+        if (!this.guard.isEmergency) {
+          this.guard.triggerEmergency(bot, `Hostile mob ${closestMob.name} nearby (${closestDist.toFixed(1)}m)`);
+          this.pushEvent(`Emergency: hostile ${closestMob.name} detected at ${closestDist.toFixed(1)}m`);
+          this.say(`/say Alert: Interrupting task! Hostile ${closestMob.name} nearby (${closestDist.toFixed(1)}m)!`);
+        }
+      } else if (this.guard.isEmergency && this.guard.emergencyReasonText.startsWith("Hostile mob")) {
+        if (!closestMob || closestDist > 14) {
+          this.guard.clearEmergency();
+          this.pushEvent("Emergency cleared: hostile mob no longer nearby");
+          this.say("/say Threat cleared. Resuming standard planning.");
+        }
+      }
+    });
+
     bot.on("entityHurt", (entity: { username?: string }) => {
       if (entity.username === this.config.username) {
         this.pushEvent("Took damage");

@@ -27,6 +27,16 @@ export const NearbyEntitySchema = z.object({
   is_hostile: z.boolean(),
 });
 
+export const TerrainReliefSchema = z.object({
+  center: z.number().describe("Relative height offset of block under feet"),
+  north: z.number().describe("Relative height offset 3 blocks North"),
+  south: z.number().describe("Relative height offset 3 blocks South"),
+  east: z.number().describe("Relative height offset 3 blocks East"),
+  west: z.number().describe("Relative height offset 3 blocks West"),
+  highest_nearby_block: z.string().optional(),
+  lowest_nearby_block: z.string().optional(),
+});
+
 export const ObservationSchema = z.object({
   timestamp: z.number(),
   health: z.number().min(0).max(20),
@@ -50,6 +60,7 @@ export const ObservationSchema = z.object({
     .array(NearbyEntitySchema)
     .max(10)
     .describe("Entities within ~32 block radius"),
+  terrain_relief: TerrainReliefSchema.describe("Elevation and relief characteristics of surrounding blocks"),
   recent_events: z
     .array(z.string().max(100))
     .max(5)
@@ -58,6 +69,7 @@ export const ObservationSchema = z.object({
 });
 
 export type Observation = z.infer<typeof ObservationSchema>;
+export type TerrainRelief = z.infer<typeof TerrainReliefSchema>;
 export type Position = z.infer<typeof PositionSchema>;
 export type ItemStack = z.infer<typeof ItemStackSchema>;
 export type NearbyBlock = z.infer<typeof NearbyBlockSchema>;

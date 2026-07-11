@@ -30,6 +30,15 @@ FAKE_OBSERVATION = Observation(
     ],
     nearby_blocks=[],
     nearby_entities=[],
+    terrain_relief={
+        "center": -1.0,
+        "north": 0.0,
+        "south": 0.0,
+        "east": 0.0,
+        "west": 0.0,
+        "highest_nearby_block": "minecraft:grass_block",
+        "lowest_nearby_block": "minecraft:stone"
+    },
     recent_events=["Spawned in world"]
 )
 
