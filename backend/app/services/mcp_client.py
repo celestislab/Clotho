@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import json
+import os
 from typing import Optional
 from contextlib import AsyncExitStack
 from mcp import ClientSession, StdioServerParameters
@@ -33,13 +34,20 @@ class MCPClientManager:
                 return
 
             logger.info(f"Launching TS MCP bridge in directory: {settings.clotho_ts_dir}")
-            
+
             # Setup stdio server parameters
-            # Runs 'npx tsx src/bridge-main.ts' inside the Clotho TS folder
+            # Runs 'npx tsx src/bridge-main.ts' inside the Clotho TS folder.
+            #
+            # IMPORTANT: pass the full parent environment explicitly. When `env`
+            # is None, the MCP SDK only forwards a minimal safe subset (PATH,
+            # HOME, ...), which would strip MC_HOST / MC_PORT / MC_AUTH / etc.
+            # The bridge would then silently fall back to 127.0.0.1:25565
+            # instead of the Minecraft server we configured.
             server_params = StdioServerParameters(
                 command="npx",
                 args=["tsx", "src/bridge-main.ts"],
                 cwd=settings.clotho_ts_dir,
+                env=dict(os.environ),
             )
 
             self._exit_stack = AsyncExitStack()

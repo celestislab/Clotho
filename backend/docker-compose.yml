@@ -1,33 +1,78 @@
 # ==============================================================================
-# Oneiro Agent Backend Docker-Compose Orchestration
-# Used to build and launch the container with correct environment configurations.
+# Oneiro — full self-driving demo stack (one command).
+#
+#   cd Clotho/backend
+#   cp .env.example .env      # put your Gemini key in LLM_API_KEY
+#   docker compose up --build
+#
+# Brings up two services on a shared bridge network:
+#   1. oneiro-mc      — a clean Paper 1.21.11 server (creative/peaceful/flat)
+#   2. oneiro-backend — FastAPI planner + TS MCP bridge + Mineflayer body.
+#      Waits for the server to be healthy, then auto-starts the
+#      Observe-Plan-Act loop (AUTO_START_PLANNER=true) and the bot joins.
+#
+# The backend reaches Minecraft by the compose service name (MC_HOST=oneiro-mc),
+# so no host networking is required — works the same on Linux/macOS/Windows.
 # ==============================================================================
 
-version: "3.8"
-
 services:
+  oneiro-mc:
+    image: itzg/minecraft-server:latest
+    container_name: oneiro-demo-mc
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      VERSION: "1.21.11"
+      ONLINE_MODE: "FALSE"
+      MODE: "creative"
+      DIFFICULTY: "peaceful"
+      LEVEL_TYPE: "FLAT"
+      LEVEL_NAME: "oneiro-demo"
+      MOTD: "Oneiro Demo Server"
+      MAX_PLAYERS: "5"
+      SPAWN_PROTECTION: "0"
+      VIEW_DISTANCE: "8"
+      SIMULATION_DISTANCE: "8"
+      ENABLE_COMMAND_BLOCK: "TRUE"
+      OPS: "Oneiro"
+      MEMORY: "2G"
+      TZ: "UTC"
+    ports:
+      # Exposed on the host too, so you can join with your own client and watch.
+      # Host port 25575 was taken on this box, so we map to 25599 instead.
+      - "25599:25565"
+    volumes:
+      - oneiro-mc-data:/data
+    healthcheck:
+      test: ["CMD", "mc-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: "no"
+
   oneiro-backend:
     container_name: oneiro-backend
     build:
-      # Build context is the parent directory (workspace root) 
-      # so the Dockerfile has access to both 'Clotho' and 'backend'
+      # Context is Clotho/ so the Dockerfile can copy both the TS body
+      # (package.json, src/) and the Python backend (backend/).
       context: ..
       dockerfile: backend/Dockerfile
-    
-    # Share the host's network namespace (critical on Linux so that localhost/127.0.0.1
-    # inside the container can reach the Minecraft server running on the host machine).
-    #
-    # NOTE: If testing on Windows/macOS where host network mode is not supported, 
-    # you can comment out 'network_mode: "host"', uncomment the 'ports' block, 
-    # and configure MC_HOST to 'host.docker.internal'.
-    network_mode: "host"
-    
-    # ports:
-    #   - "8000:8000"
-
-    # Load environment variables from the local .env file
+    depends_on:
+      oneiro-mc:
+        condition: service_healthy
+    # Load secrets/config from the local .env (LLM_API_KEY lives here, never in git).
     env_file:
       - .env
-
-    # Restart policy
+    environment:
+      # Talk to the MC container by service name over the shared network.
+      MC_HOST: "oneiro-mc"
+      MC_PORT: "25565"
+      # Self-driving: start the planning loop as soon as the bot connects.
+      AUTO_START_PLANNER: "true"
+    ports:
+      - "8000:8000"
     restart: unless-stopped
+
+volumes:
+  oneiro-mc-data:

@@ -7,6 +7,12 @@ export const IntentEnum = z.enum([
   "PLACE_TASK",
   "FOLLOW_PLAYER",
   "SURVIVE",
+  "EQUIP_TASK",
+  "SMELT_TASK",
+  "DROP_TASK",
+  "ATTACK_TASK",
+  "DEPOSIT_TASK",
+  "WITHDRAW_TASK",
   "IDLE",
 ]);
 
@@ -14,8 +20,8 @@ export type Intent = z.infer<typeof IntentEnum>;
 
 export const GoalSchema = z.object({
   intent: IntentEnum,
-  target: z.string().optional().describe("Block type (minecraft:oak_log), player name, or recipe id"),
-  count: z.number().int().min(1).max(64).optional(),
+  target: z.string().optional().describe("Block type (minecraft:oak_log), player name, item name, or recipe id"),
+  count: z.number().int().min(1).max(10000).optional(),
   position: z
     .object({
       x: z.number(),
@@ -25,6 +31,7 @@ export const GoalSchema = z.object({
     .optional(),
   priority: z.enum(["low", "normal", "high", "critical"]).default("normal"),
   reason: z.string().max(300).default("").describe("Why this goal was chosen"),
+  chat: z.string().max(200).optional().describe("Optional chat message in Russian, friendly, cute tone, can complain or joke"),
 });
 
 export type Goal = z.infer<typeof GoalSchema>;
@@ -56,5 +63,11 @@ export const INTENT_DESCRIPTIONS: Record<Intent, string> = {
   PLACE_TASK: "Place a block at a specific location",
   FOLLOW_PLAYER: "Follow a named player, keeping a safe distance",
   SURVIVE: "Prioritize survival: eat, flee danger, find shelter",
+  EQUIP_TASK: "Equip a weapon, tool, armor, or shield from inventory",
+  SMELT_TASK: "Smelt raw ores or items in a furnace",
+  DROP_TASK: "Drop/toss a specific item from the inventory onto the ground",
+  ATTACK_TASK: "Hunt/attack a nearby monster, animal, or entity",
+  DEPOSIT_TASK: "Deposit an item from inventory into a chest at a given position",
+  WITHDRAW_TASK: "Withdraw an item from a chest at a given position into inventory",
   IDLE: "Stop and wait; no immediate action needed",
 };

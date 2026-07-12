@@ -1,6 +1,8 @@
 # Secrets
 .env
 .env.*
+!.env.example
+!*/.env.example
 
 # OpenClaw
 .openclaw/
@@ -26,3 +28,9 @@ node_modules/
 __pycache__/
 *.pyc
 .venv/
+
+# Backend runtime data (memory, inventory viewer, etc.)
+backend/data/
+
+# Docker volumes
+oneiro-mc-data/

@@ -67,6 +67,12 @@ function cleanItemName(name: string): string {
   return name.startsWith("minecraft:") ? name.slice(10) : name;
 }
 
+/** Coerce a possibly-NaN/undefined numeric stat to a safe default (packets may
+ * not have arrived yet right after spawn, leaving health/food as NaN). */
+function safeNum(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
 function classifyEntity(name: string): NearbyEntity["type"] {
   const clean = cleanItemName(name);
   if (PASSIVE_ANIMALS.has(clean)) return "animal";
@@ -197,17 +203,20 @@ export function extractObservation(
   const hasHostile = nearbyEntities.some(
     (e) => e.is_hostile && e.distance < 16 && Math.abs(pos.y - e.position.y) < 5,
   );
-  const lowHealth = bot.health < 10;
+  // Health/food may be NaN in the first tick after spawn (packet not in yet).
+  const health = safeNum(bot.health, 20);
+  const food = safeNum(bot.food, 20);
+  const lowHealth = health < 10;
   const heldItem = bot.heldItem;
   const blockAtFeet = bot.blockAt(pos);
   const biome = blockAtFeet?.biome?.name ?? "unknown";
 
   return {
     timestamp: Date.now(),
-    health: Math.round(bot.health * 10) / 10,
-    food: Math.round(bot.food * 10) / 10,
-    saturation: Math.round(bot.foodSaturation * 10) / 10,
-    oxygen: bot.oxygenLevel,
+    health: Math.round(health * 10) / 10,
+    food: Math.round(food * 10) / 10,
+    saturation: Math.round(safeNum(bot.foodSaturation, 5) * 10) / 10,
+    oxygen: safeNum(bot.oxygenLevel, 20),
     position: {
       x: Math.round(pos.x * 10) / 10,
       y: Math.round(pos.y * 10) / 10,

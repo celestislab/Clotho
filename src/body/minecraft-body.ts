@@ -68,6 +68,20 @@ export class MinecraftBody {
         this.events.onError?.(err);
         if (!this.bot) reject(err);
       });
+
+      // If the socket closes before we ever spawn, the connect promise would
+      // otherwise hang forever and the process would exit silently. Fail loudly
+      // with the likely cause (wrong port — e.g. RCON 25575 vs game 25565).
+      bot.once("end", (reason: string) => {
+        if (!this.bot) {
+          reject(
+            new Error(
+              `Connection closed before spawn (${reason}). ` +
+                `Check MC_HOST/MC_PORT — is this the game port, not RCON?`,
+            ),
+          );
+        }
+      });
     });
   }
 

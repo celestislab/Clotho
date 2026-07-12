@@ -29,6 +29,16 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to start MCP client during startup sequence: {e}")
         logger.error("Backend will continue running, but tools calling Minecraft will be unavailable.")
 
+    # 1b. Optionally kick off the autonomous Observe-Plan-Act loop right away.
+    # This is what makes the Docker container self-driving: no manual
+    # POST /agent/start needed. Controlled by AUTO_START_PLANNER in .env.
+    if settings.auto_start_planner:
+        try:
+            logger.info("AUTO_START_PLANNER is enabled — starting planner loop...")
+            await planner.start()
+        except Exception as e:
+            logger.error(f"Failed to auto-start planner loop: {e}")
+
     yield  # FastAPI starts accepting HTTP requests here
     
     # 2. Cleanup operations on shutdown

@@ -16,7 +16,10 @@ export interface ExecutionResult {
 function makeMovements(bot: Bot): MovementsInstance {
   const movements = new Movements(bot);
   movements.allowSprinting = true;
-  movements.canDig = true;
+  // Human-like navigation: a real player walks around obstacles, they don't
+  // tunnel straight through solid terrain to reach a goal. Digging is done
+  // deliberately in MINE_TASK, never as a side effect of pathfinding.
+  movements.canDig = false;
   movements.allowParkour = true; // Enables jumping across 1-block gaps
   movements.maxDropDown = 3;
   return movements;
@@ -24,6 +27,53 @@ function makeMovements(bot: Bot): MovementsInstance {
 
 function cleanItemName(name: string): string {
   return name.startsWith("minecraft:") ? name.slice(10) : name;
+}
+
+/** Tool material tiers, best to worst — used to pick the strongest available tool. */
+const TOOL_TIERS = ["netherite", "diamond", "iron", "stone", "golden", "wooden"];
+
+function toolTierRank(itemName: string): number {
+  for (let i = 0; i < TOOL_TIERS.length; i++) {
+    if (itemName.startsWith(`${TOOL_TIERS[i]}_`)) return TOOL_TIERS.length - i;
+  }
+  return 0;
+}
+
+/** Which tool kind a block should be mined with, or null if the hand is fine. */
+function toolKindForBlock(blockName: string): "pickaxe" | "axe" | "shovel" | null {
+  const n = blockName;
+  if (/log|wood|plank|fence|_door|_stem|hyphae|crimson|warped|bamboo|chest|barrel|bookshelf/.test(n)) {
+    return "axe";
+  }
+  if (/dirt|grass_block|sand|gravel|clay|soul_sand|soul_soil|podzol|mycelium|snow|farmland|mud|coarse/.test(n)) {
+    return "shovel";
+  }
+  if (/stone|ore|cobble|deepslate|granite|diorite|andesite|obsidian|netherrack|blackstone|basalt|tuff|copper|iron_block|gold_block|coal|diamond|emerald|redstone|lapis|brick|concrete|terracotta|furnace|anvil|amethyst|calcite|dripstone/.test(n)) {
+    return "pickaxe";
+  }
+  return null;
+}
+
+/**
+ * Equip the strongest matching tool from the inventory before mining. Prevents
+ * the tell-tale "punching stone with a bare fist" behaviour that instantly
+ * marks a bot. No-op if no suitable tool is carried (hand fallback).
+ */
+async function equipBestTool(bot: Bot, blockName: string): Promise<void> {
+  const kind = toolKindForBlock(cleanItemName(blockName));
+  if (!kind) return;
+  const candidates = bot.inventory
+    .items()
+    .filter((i) => i.name.endsWith(`_${kind}`))
+    .sort((a, b) => toolTierRank(b.name) - toolTierRank(a.name));
+  const best = candidates[0];
+  if (!best) return;
+  if (bot.heldItem?.name === best.name) return;
+  try {
+    await bot.equip(best, "hand");
+  } catch {
+    // Non-fatal: fall back to whatever is in hand.
+  }
 }
 
 function findNearestBlock(
@@ -137,10 +187,10 @@ async function mineBlocks(
         failures++;
         continue;
       }
+      await equipBestTool(bot, block.name);
       await bot.dig(block, true);
       mined++;
-      bot.chat(`/say Oneiro mined ${blockName} (${mined}/${count})`);
-      
+
       // Step forward to pick up the dropped item
       try {
         await navigateTo(bot, block.position, guard, 1);
@@ -301,8 +351,6 @@ async function survive(bot: Bot, guard: SafetyGuard): Promise<ExecutionResult> {
       Math.round(fleeTarget.z)
     );
 
-    bot.chat(`/say Warning: Fleeing from ${closestMob.name} (${closestDist.toFixed(1)}m away)`);
-    
     // Enable sprinting state and run to safety
     bot.setControlState("sprint", true);
     const navResult = await navigateTo(bot, target, guard, 2);
@@ -344,6 +392,28 @@ async function survive(bot: Bot, guard: SafetyGuard): Promise<ExecutionResult> {
   return { success: true, message: "Assessed situation, area is clear of threats" };
 }
 
+/**
+ * Stroll to a random spot nearby. Humans wander aimlessly; the planner often
+ * wants this ("пойду прогуляюсь") but can only express it as a GOTO with no
+ * coordinates, which used to fail. Wandering is best-effort: a pathfinding
+ * timeout still counts as success (we moved around, that's the point).
+ */
+async function wander(bot: Bot, guard: SafetyGuard): Promise<ExecutionResult> {
+  const pos = bot.entity.position;
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 6 + Math.random() * 12; // 6..18 blocks
+  const target = new Vec3(
+    Math.floor(pos.x + Math.cos(angle) * dist),
+    Math.floor(pos.y),
+    Math.floor(pos.z + Math.sin(angle) * dist),
+  );
+  const res = await navigateTo(bot, target, guard, 2);
+  return {
+    success: true,
+    message: res.success ? `Wandered to ${target.x},${target.z}` : "Wandered around a bit",
+  };
+}
+
 export async function executeGoal(
   bot: Bot,
   goal: Goal,
@@ -366,9 +436,9 @@ export async function executeGoal(
         if (block) {
           return navigateTo(bot, block.position, guard, 2);
         }
-        return { success: false, message: `Cannot find ${goal.target} to go to` };
       }
-      return { success: false, message: "GOTO requires position or target" };
+      // No concrete destination — treat it as an aimless stroll instead of failing.
+      return wander(bot, guard);
     }
 
     case "MINE_TASK": {

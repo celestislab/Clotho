@@ -33,6 +33,15 @@ export class SafetyGuard {
     this.stepCount++;
   }
 
+  /**
+   * Reset only the per-goal step counter, leaving emergency/watchdog state
+   * intact. Called at the start of each plan tick so the maxSteps cap applies
+   * per goal, not across the whole (long-running) session.
+   */
+  resetSteps(): void {
+    this.stepCount = 0;
+  }
+
   resetWatchdog(): void {
     if (this.watchdogTimer) {
       clearTimeout(this.watchdogTimer);

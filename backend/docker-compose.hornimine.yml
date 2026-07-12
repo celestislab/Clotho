@@ -1,0 +1,37 @@
+# ==============================================================================
+# Oneiro against the LIVE HorniMine server (main container).
+#
+#   cd Clotho/backend
+#   docker compose -f docker-compose.hornimine.yml up --build
+#
+# The agent connects DIRECTLY to the main Paper server on the host
+# (127.0.0.1:25565). Velocity/Bungee forwarding is disabled on main, auth
+# gates live on proxy/hub (bypassed by a direct connect), and online-mode is
+# off, so a Mineflayer offline bot named "Oneiro" joins the world directly.
+#
+# network_mode: host is required so 127.0.0.1 inside the container reaches the
+# main server running on the host.
+#
+# SAFETY: the planner does NOT auto-start here (AUTO_START_PLANNER=false). Boot
+# the bot, verify it joined + OP it + teleport it somewhere empty via RCON,
+# THEN kick the loop with `curl -X POST localhost:8000/agent/start`.
+# ==============================================================================
+
+services:
+  oneiro-backend:
+    container_name: oneiro-hornimine
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    network_mode: "host"
+    env_file:
+      - .env
+    environment:
+      MC_HOST: "127.0.0.1"
+      MC_PORT: "25565"
+      MC_USERNAME: "Oneiro"
+      MC_AUTH: "offline"
+      MC_VERSION: "1.21.11"
+      # Manual start — do NOT let the bot start mining on a live world on boot.
+      AUTO_START_PLANNER: "false"
+    restart: "no"
