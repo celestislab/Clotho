@@ -1,120 +1,106 @@
-# Clotho Framework
+# Clotho
 
-> **The embodied-agent framework that agents run on** — the [Hermes Agent](https://github.com/NousResearch/hermes-agent) planning runtime plus a TypeScript extension layer that gives an AI mind a body in a 3D world: the UMAS action/intent/observation contract, a game-decoupled reflex/safety engine, a Minecraft body adapter, a Python FastAPI planner backend, and the orchestrator. Our fine-tuned model [Oneiro](https://github.com/celestislab/Oneiro) plugs into Clotho as the reflex brain.
+> An embodied AI agent framework for Minecraft. Clotho gives an LLM a body — it sees the world, thinks about what to do, and acts on it. Built for the [AMD Developer Hackathon: ACT II](https://lablab.ai/ai-hackathons/amd-developer-hackathon-act-ii) (Unicorn track).
 
 <p>
   <a href="https://lablab.ai/ai-hackathons/amd-developer-hackathon-act-ii"><img alt="AMD Developer Hackathon: ACT II" src="https://img.shields.io/badge/Hackathon-AMD%20Developer%20Act%20II-ED1C24?style=flat-square"></a>
   <img alt="Track: Unicorn" src="https://img.shields.io/badge/Track-Unicorn-9B59B6?style=flat-square"></a>
-  <img alt="Compute: AMD Developer Cloud" src="https://img.shields.io/badge/Compute-AMD%20Developer%20Cloud-ED1C24?style=flat-square"></a>
-  <img alt="Inference: Fireworks AI" src="https://img.shields.io/badge/Inference-Fireworks%20AI-FF6B35?style=flat-square"></a>
   <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-22B14C?style=flat-square"></a>
 </p>
 
 ---
 
-## Quick Start (Docker, one command)
-
-The fastest way to see Oneiro live in Minecraft:
+## Quick Start
 
 ```bash
 cd Clotho/backend
 cp .env.example .env          # put your Gemini API key in LLM_API_KEY
-docker compose up --build     # builds + launches MC server + agent
+docker compose up --build     # launches MC server + agent
 ```
 
-This brings up **two containers** on a shared network:
+Join the server at `localhost:25599`, API on `localhost:8000`. The agent connects, observes the world, plans multi-step goals with Gemini, and executes them — mining, crafting, exploring, and surviving autonomously.
 
-| Service | What it does |
-|---------|-------------|
-| `oneiro-mc` | A clean Paper 1.21.11 server (creative, peaceful, flat world). Port `25599` exposed so you can join with your client. |
-| `oneiro-backend` | FastAPI planner + TS MCP bridge + Mineflayer body. Waits for MC to be healthy, then auto-starts the Observe-Plan-Act loop. API on port `8000`. |
+To run against an existing Minecraft server instead:
 
-Join the server at `localhost:25599` and watch Oneiro think, move, mine, craft, and explore autonomously.
-
-> **Live server mode:** To run Oneiro against an existing Minecraft server, use `docker compose -f docker-compose.hornimine.yml up --build` (connects via host networking, manual planner start for safety).
+```bash
+docker compose -f docker-compose.hornimine.yml up --build
+```
 
 ---
 
 ## What is Clotho?
 
-Clotho is the **framework agents run on** — the runtime that turns a set of models into an embodied agent. It supplies everything a mind needs to inhabit a body:
+Clotho is a framework that turns an LLM into an embodied Minecraft agent. The agent runs a continuous **Observe-Plan-Act** loop:
 
-- **UMAS Schemas** (Zod + Pydantic) — the action/intent/observation vocabulary that any agent must speak
-- **Reflex Engine** — `SafetyGuard`, a game-decoupled survival system that enforces stop conditions (low health, step limits, watchdog timeouts) regardless of what the planner decides
-- **Body adapter** — a Minecraft (Mineflayer) implementation of the framework's body interface: state extraction, action execution, connection lifecycle
-- **Python planner backend** — a FastAPI service that runs the Observe-Plan-Act cognitive loop: observes the world via MCP, asks an LLM (Gemini) for multi-step goals, and executes them sequentially through the body
-- **TS planner + chat brain** — an alternative TypeScript-native planner with a chat personality layer (humanized typing, ambient replies, persona)
-- **Hermes runtime** — vendored planning layer (memory, tools, provider routing) that hosts the planner agent
+1. **Observe** — a Mineflayer body extracts the full game state (health, inventory, nearby blocks, entities, terrain, equipment) into a typed `Observation`
+2. **Plan** — the planner sends the observation to an LLM (Gemini) and gets back a sequence of up to 8 high-level goals, each with a reason and optional chat message
+3. **Act** — the body executes each goal through Mineflayer (pathfinding, mining, crafting, placing, combat, smelting, etc.)
+4. **Verify** — a `SafetyGuard` reflex layer monitors health/food and can emergency-stop at any time, independent of the planner
 
-The models are **guests** on this framework: our fine-tuned **Oneiro** model runs on Clotho as the fast reflex brain, and **Gemini** runs on it as the slow planner.
-
-The schema and reflex layers are intentionally **game-agnostic** — no `mineflayer` import. The `SafetyGuard` operates through an `EmergencyStoppable` interface, and only the body adapter is Minecraft-specific.
+A separate **chat brain** gives the agent a personality — humanized typing speed, reaction delays, and ambient replies — so it feels like a real player talking in chat.
 
 ```
-    ┌──────────┐     ┌──────────┐     ┌──────────┐
-    │  OBSERVE │────▶│   PLAN   │────▶│   ACT    │
-    │  (see)   │     │  (think) │     │  (move)  │
-    └──────────┘     └──────────┘     └──────────┘
+    +----------+     +----------+     +----------+
+    | OBSERVE  |---->| PLAN     |---->| ACT      |
+    | (see)    |     | (think)  |     | (move)   |
+    +----------+     +----------+     +----------+
          ^                                   |
-         └───────────── verify <─────────────┘
+         +------------- verify <-------------+
 ```
 
-> **Clotho** = the framework agents run on (Hermes runtime + TS extension layer: schemas, reflex, body, orchestrator). **Oneiro** = our fine-tuned model that runs on Clotho as the reflex brain. **Hermes** = the planning runtime by [Nous Research](https://github.com/NousResearch/hermes-agent), vendored inside Clotho.
+The schema and reflex layers are **game-agnostic** — no `mineflayer` import. Only the body adapter knows about Minecraft, so swapping the game means replacing one layer.
 
 ---
 
-## Hackathon Context
+## Architecture
 
-This project is our submission to **[AMD Developer Hackathon: ACT II](https://lablab.ai/ai-hackathons/amd-developer-hackathon-act-ii)** on lablab.ai, competing in the **Unicorn** track.
+### Reflex Layer (TypeScript, SafetyGuard)
 
-| Resource | Role |
-|----------|------|
-| **Gemma 4 12B** (open weights, Google) | Base model fine-tuned for **reflexes** (vision-based survival, combat) |
-| **Gemini** (Google API) | **Planner** — strategic reasoning, multi-step goal generation |
-| **PLAICraft** (UBC/PLAI) | Time-aligned human Minecraft behavior dataset for reflex training |
-| **Hermes Agent** (Nous Research) | Planning runtime — memory, tools, provider routing |
-| **AMD Developer Cloud** | Training & heavy compute (AMD Instinct GPUs, ROCm) |
+A rule-based survival system that runs independently of the planner:
+- Emergency stop when health < 6 or food < 2
+- Step cap per goal (configurable, default 50)
+- Watchdog timeout per goal execution (default 60s)
+- Operates through an `EmergencyStoppable` interface — no Minecraft dependency
 
-> **Reflex model on Hugging Face:** [`Celestis-ai/oneiro-mc`](https://huggingface.co/Celestis-ai/oneiro-mc) *(link will go live once published)*
+### Planner (Python, FastAPI + Gemini)
 
----
+The "prefrontal cortex" — strategic reasoning every 15-45 seconds:
+- Observes the world via MCP, asks Gemini for multi-step goal sequences (up to 8 goals per cycle)
+- **Score system** — rewards exploration, item discovery, goal completion; penalizes damage and death
+- **World memory database** — persists known locations of crafting tables, furnaces, ores, and chests across cycles
+- **Dynamic crafting hints** — generates contextual tips based on current inventory ("You have 4+ planks, craft a Crafting Table!")
+- **Minecraft encyclopedia** — the system prompt includes ore generation, crafting recipes, combat strategies, and fuel guides
+- **Sleep-polling** — during the interval between planning cycles, checks for new player chat or danger and wakes up immediately if detected
 
-## Architecture: Dual-Agent VLA
+### Chat Brain (TypeScript, Gemini)
 
-Oneiro uses a **dual-agent architecture** to separate fast reflexes from slow planning:
-
-### 1. Reflex Agent (Motor Cortex) — the **Oneiro** model (Gemma 4 12B fine-tune, `oneiro-mc`)
-- Fine-tuned on PLAICraft behavior data for vision-based survival
-- Outputs UMAS action tokens (single-token classification, < 100ms target)
-- Handles combat, dodging, parkour, emergency survival
-- Served via vLLM (ROCm) or llama.cpp (GGUF fallback)
-- **Current fallback**: rule-based `SafetyGuard` (HP<6, food<2, step cap, watchdog)
-
-### 2. Planner Agent (Prefrontal Cortex) — Gemini via FastAPI backend
-- Cloud API model, runs asynchronously every 15-45s
-- Takes world observations, outputs **multi-step goal sequences** (up to 8 goals)
-- Includes a **score system** (exploration, discovery, survival, goal completion)
-- Maintains a **world memory database** (tracks crafting tables, furnaces, ores)
-- Generates **dynamic crafting hints** based on current inventory
-- **Does NOT control raw movements** — only sets strategic directives
-
-### 3. Chat Brain (Social Layer)
-- Separate LLM call for low-latency, personality-driven chat replies
-- Humanized typing speed, reaction delays, ambient replies
+A separate LLM call for low-latency social interaction:
+- Humanized typing speed (configurable characters per second)
+- Randomized reaction delays (180-520ms by default)
+- Ambient replies (occasionally initiates conversation)
 - Configurable persona (name, language, tone)
 
+### Body (TypeScript, Mineflayer)
+
+The Minecraft adapter — the only place `mineflayer` is imported:
+- **State extractor** — reads the world and produces a typed `Observation`
+- **Action executor** — turns `Goal` objects into Mineflayer actions (13 intents)
+- **Connection lifecycle** — connect, spawn, handle kicks/errors, graceful shutdown
+
 ### MCP Bridge
-- Connects the Python planner to the TypeScript Mineflayer body
-- Exposes safe tools: `get_state()`, `set_goal()`, `get_goal_status()`, `chat()`
-- **Never used for reflexes** — only for periodic planning cycles
+
+Connects the Python planner to the TypeScript body over stdio:
+- `get_state()` — returns the current `Observation` as JSON
+- `set_goal(goal)` — sends a goal to the body and blocks until completion
+- `get_goal_status()` — queries the status of the current goal
+- `chat(message)` — sends a chat message through the body
 
 ```
 +-------------------------------------------------------------+
-|  REFLEX LAYER (Clotho TS, SafetyGuard, <100ms)             |
-|  SafetyGuard: HP<6->stop, food<2->eat, creeper->flee        |
-|  Local, no network for survival                             |
+|  REFLEX LAYER (TS, SafetyGuard)                             |
+|  HP<6 -> stop, food<2 -> eat, step cap, watchdog            |
 +--------------------------+----------------------------------+
-                           | goal override (subsumption)
+                           |
 +--------------------------v----------------------------------+
 |  PYTHON PLANNER (FastAPI + Gemini, every 15-45s)            |
 |  Observe -> Multi-step Plan (up to 8 goals) -> Execute      |
@@ -131,61 +117,6 @@ Oneiro uses a **dual-agent architecture** to separate fast reflexes from slow pl
 |  CHAT BRAIN (TS, Gemini, humanized replies)                 |
 |  Persona + typing speed + ambient replies                   |
 +-------------------------------------------------------------+
-```
-
-> Deep dive: [`docs/ADR-001-architecture.md`](docs/ADR-001-architecture.md) — why dual-agent over a single LLM.
-
----
-
-## What's in This Repo
-
-```
-Clotho/
-├── src/
-│   ├── hermes/               # Vendored Hermes Agent (Python, committed)
-│   ├── schemas/              # UMAS contract (Zod-validated)
-│   │   ├── actions.ts        # Low-level primitives
-│   │   ├── intents.ts        # 13 high-level intents + GoalResult
-│   │   └── observation.ts    # Full world state (health, inventory, terrain, equipment)
-│   ├── reflex/
-│   │   └── safety-guard.ts   # Reflex engine (EmergencyStoppable interface)
-│   ├── body/                 # Minecraft body adapter (Mineflayer)
-│   │   ├── minecraft-body.ts # Connection lifecycle, observation/action API
-│   │   ├── state-extractor.ts# Extracts world state -> Observation
-│   │   └── action-executor.ts# Executes goals -> Mineflayer actions (13 intents)
-│   ├── brain/                # TS-native planner + chat brain
-│   │   ├── planner.ts        # LLM-based goal planning
-│   │   ├── chat.ts           # Personality-driven chat replies
-│   │   └── llm.ts            # Shared LLM client utilities
-│   ├── agent/
-│   │   └── agent-loop.ts     # Orchestrates observe-plan-act-chat cycle
-│   ├── bridge/               # MCP server + test client
-│   ├── mcp/
-│   │   └── body-server.ts    # MCP bridge: exposes the body to the Python planner
-│   ├── util/
-│   │   └── humanize.ts       # Anti-robot typing/reaction timing
-│   ├── env.ts                # Shared .env loader for all entrypoints
-│   └── index.ts              # Standalone TS runner (body + reflex + planner + chat)
-├── backend/                  # Python FastAPI planner backend
-│   ├── app/
-│   │   ├── main.py           # FastAPI app with lifespan management
-│   │   ├── core/config.py    # Pydantic settings (env-driven, no hardcoded keys)
-│   │   ├── api/routes.py     # REST API: /agent/step, /start, /stop, /status
-│   │   ├── services/
-│   │   │   ├── planner.py    # Autonomous Observe-Plan-Act loop + score + world memory
-│   │   │   ├── llm.py        # LLM client (Gemini) with Minecraft encyclopedia prompt
-│   │   │   └── mcp_client.py # MCP stdio client -> TS body bridge
-│   │   └── schemas/          # Pydantic schemas (mirrors TS Zod schemas)
-│   ├── Dockerfile            # Combined Python+Node image for the backend
-│   ├── docker-compose.yml    # One-command demo: MC server + agent
-│   ├── docker-compose.hornimine.yml  # Live server mode (host networking)
-│   ├── requirements.txt      # Python dependencies
-│   └── .env.example          # Configuration template (copy to .env)
-├── docs/                     # Architecture, ADRs
-├── Dockerfile                # Full Clotho+Hermes multi-stage image
-├── TODO.md                   # Ground-truth build status & roadmap
-├── package.json              # @celestis/clotho (zod + mineflayer + mcp-sdk + openai)
-└── tsconfig.json
 ```
 
 ---
@@ -212,7 +143,7 @@ The agent communicates through 13 high-level intents:
 
 ---
 
-## REST API (Python backend)
+## REST API
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -224,15 +155,66 @@ The agent communicates through 13 high-level intents:
 
 ---
 
+## Repository Structure
+
+```
+Clotho/
+├── src/
+│   ├── schemas/              # UMAS contract (Zod-validated)
+│   │   ├── actions.ts        # Low-level primitives
+│   │   ├── intents.ts        # 13 high-level intents + GoalResult
+│   │   └── observation.ts    # Full world state (health, inventory, terrain, equipment)
+│   ├── reflex/
+│   │   └── safety-guard.ts   # Reflex engine (EmergencyStoppable interface)
+│   ├── body/                 # Minecraft body adapter (Mineflayer)
+│   │   ├── minecraft-body.ts # Connection lifecycle, observation/action API
+│   │   ├── state-extractor.ts# Extracts world state -> Observation
+│   │   └── action-executor.ts# Executes goals -> Mineflayer actions (13 intents)
+│   ├── brain/                # TS-native planner + chat brain
+│   │   ├── planner.ts        # LLM-based goal planning
+│   │   ├── chat.ts           # Personality-driven chat replies
+│   │   └── llm.ts            # Shared LLM client utilities
+│   ├── agent/
+│   │   └── agent-loop.ts     # Orchestrates observe-plan-act-chat cycle
+│   ├── bridge/               # MCP server + test client
+│   ├── mcp/
+│   │   └── body-server.ts    # MCP bridge: exposes the body to the Python planner
+│   ├── util/
+│   │   └── humanize.ts       # Anti-robot typing/reaction timing
+│   ├── env.ts                # Shared .env loader
+│   └── index.ts              # Standalone TS runner (body + reflex + planner + chat)
+├── backend/                  # Python FastAPI planner backend
+│   ├── app/
+│   │   ├── main.py           # FastAPI app with lifespan management
+│   │   ├── core/config.py    # Pydantic settings (env-driven, no hardcoded keys)
+│   │   ├── api/routes.py     # REST API: /agent/step, /start, /stop, /status
+│   │   ├── services/
+│   │   │   ├── planner.py    # Autonomous Observe-Plan-Act loop + score + world memory
+│   │   │   ├── llm.py        # LLM client (Gemini) with Minecraft encyclopedia prompt
+│   │   │   └── mcp_client.py # MCP stdio client -> TS body bridge
+│   │   └── schemas/          # Pydantic schemas (mirrors TS Zod schemas)
+│   ├── Dockerfile            # Combined Python+Node image for the backend
+│   ├── docker-compose.yml    # One-command demo: MC server + agent
+│   ├── docker-compose.hornimine.yml  # Live server mode (host networking)
+│   ├── requirements.txt      # Python dependencies
+│   └── .env.example          # Configuration template
+├── docs/                     # Architecture, ADRs
+├── TODO.md                   # Build status & roadmap
+├── package.json              # @celestis/clotho
+└── tsconfig.json
+```
+
+---
+
 ## Configuration
 
-All configuration is via environment variables (`.env` files, never committed).
+All configuration is via environment variables. `.env` files are gitignored, `.env.example` templates are committed.
 
 ### Python backend (`backend/.env`)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_API_KEY` | (empty) | Gemini API key. If empty, runs in mock mode. |
+| `LLM_API_KEY` | (empty) | Gemini API key. If empty, runs in mock mode (rule-based). |
 | `LLM_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai/` | OpenAI-compatible endpoint |
 | `LLM_MODEL` | `gemini-3.5-flash` | Planner model |
 | `MC_HOST` | `127.0.0.1` | Minecraft server host |
@@ -252,39 +234,52 @@ See [`.env.example`](.env.example) for the full list (planner, chat, persona, hu
 
 ---
 
-## Installation (manual, without Docker)
-
-All runnable code lives here in Clotho. The Oneiro repo holds the model, its training pipeline, and the demo scripts.
+## Manual Installation
 
 ```bash
 git clone https://github.com/celestislab/Clotho.git
-git clone https://github.com/celestislab/Oneiro.git
-
 cd Clotho
 npm install
 npm run typecheck   # tsc --noEmit — the only quality gate
-
-# Python backend (optional, for the FastAPI planner)
-cd backend
-pip install -r requirements.txt
-cp .env.example .env   # edit with your Gemini API key
-uvicorn app.main:app --reload
 ```
 
-### Run the TS standalone runner (body + reflex + TS planner + chat)
+### TS standalone runner (body + reflex + TS planner + chat)
 
 ```bash
 cp .env.example .env   # edit with your API key and MC connection
 npm run demo           # tsx src/index.ts --demo
 ```
 
-### Run the MCP bridge (for Python backend or Hermes)
+### Python backend (FastAPI planner)
+
+```bash
+cd backend
+pip install -r requirements.txt
+cp .env.example .env   # edit with your Gemini API key
+uvicorn app.main:app --reload
+```
+
+### MCP bridge (for connecting the Python planner to the body)
 
 ```bash
 npm run mcp   # starts src/mcp/body-server.ts on stdio
-# then connect the planner:
-#   hermes mcp add clotho-body --command "npx tsx src/mcp/body-server.ts"
 ```
+
+---
+
+## Roadmap
+
+The hackathon prototype is the foundation. Next steps:
+
+1. **Reflex model** — wire a fine-tuned vision model as the fast reflex brain, emitting UMAS action tokens in < 100ms. `SafetyGuard` stays as the fallback.
+2. **Subsumption** — survival reflexes override in-flight planner goals (e.g. creeper nearby -> flee mid-task).
+3. **Hermes integration** — connect the [Hermes Agent](https://github.com/NousResearch/hermes-agent) runtime (vendored at `src/hermes/`) as an alternative planner with persistent SQLite memory, skills, and provider routing.
+4. **State extractor expansion** — populate `equipment`, `visible_blocks`, and `terrain_relief` fields (schemas already support them).
+5. **Social voice agent** — real-time speech, decoupled from movement.
+6. **Raw-input core** — C++ screen capture + keystroke injection, replacing Mineflayer as the body adapter.
+7. **UMAS expansion** — from 13 intents toward a full ~150-token action taxonomy.
+
+> See [TODO.md](TODO.md) for ground-truth build status.
 
 ---
 
@@ -292,35 +287,8 @@ npm run mcp   # starts src/mcp/body-server.ts on stdio
 
 | Repo | What | URL |
 |------|------|-----|
-| **Clotho** (this) | The framework agents run on: Hermes runtime + TS extension layer + Python planner backend | [github.com/celestislab/Clotho](https://github.com/celestislab/Clotho) |
-| **Oneiro** | Our fine-tuned model + its training pipeline and demo | [github.com/celestislab/Oneiro](https://github.com/celestislab/Oneiro) |
-| **oneiro-mc** | The Oneiro model weights (Gemma 4 12B LoRA, Minecraft checkpoint) | [huggingface.co/Celestis-ai/oneiro-mc](https://huggingface.co/Celestis-ai/oneiro-mc) |
-| **Hermes** | Planning runtime, vendored inside Clotho (`src/hermes/`) | [github.com/NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) |
-
----
-
-## Training Data: PLAICraft
-
-Oneiro's model is fine-tuned on **[PLAICraft](https://www.plaicraft.ai/)** — a large-scale, open, multimodal Minecraft behavior dataset from UBC/PLAI.
-
-| Fact | Value |
-|------|-------|
-| Total collected | 10,000+ hours from 10,000+ participants |
-| Public subset | ~200 hours (anonymized, privacy-reviewed) |
-| Modalities | Screen video (30 FPS), keyboard/mouse (SQLite), game + mic audio |
-| Paper | [arXiv:2505.12707](https://arxiv.org/abs/2505.12707) |
-
-> PLAICraft has UBC ethics approval and is anonymized before public release. We use it for research prototyping only, cite it clearly, and do not redistribute raw data. See [Oneiro/training/README.md](https://github.com/celestislab/Oneiro/blob/main/training/README.md) for the full pipeline.
-
----
-
-## Roadmap
-
-1. **Reflex model optimization** — optimize oneiro-mc (Gemma 4 12B) for real-time inference at FPS (< 100ms)
-2. **Clotho raw-input core** — C++ screen capture + keystroke injection, replacing Mineflayer as the body adapter
-3. **Subsumption** — survival instincts (reflex) override planner directives when a creeper is 3 blocks away
-4. **Social voice agent** — real-time speech via Gemini Live / GPT Realtime, decoupled from movement
-5. **UMAS expansion** — from 13 hackathon intents toward the full ~150 token taxonomy
+| **Clotho** (this) | Framework: schemas, reflex, body, planner, chat | [github.com/celestislab/Clotho](https://github.com/celestislab/Clotho) |
+| **Oneiro** | Model training pipeline and demo scripts | [github.com/celestislab/Oneiro](https://github.com/celestislab/Oneiro) |
 
 ---
 
@@ -331,7 +299,6 @@ Oneiro's model is fine-tuned on **[PLAICraft](https://www.plaicraft.ai/)** — a
 - Cokeef (Nikita) — Founder, vision, infrastructure
 - Halva (Arseniy) — Backend engineering, planner system
 - Hornik — AI coding agent
-- *(Recruits from the lablab.ai / AMD community)*
 
 ---
 
