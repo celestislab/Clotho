@@ -298,6 +298,8 @@ The hackathon prototype is the foundation. Next steps:
 
 - Cokeef (Nikita) — Founder, vision, infrastructure
 - Halva (Arseniy) — Backend engineering, planner system
+- rinumuz — Backend development
+- OSIRIS — Backend development
 - Hornik — AI coding agent
 
 ---
